@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 // ---------- Formato ----------
 export const fmtDate = (d) => (d ? new Date(d.length === 10 ? `${d}T12:00:00` : d).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—')
@@ -81,7 +82,9 @@ export function Modal({ title, desc, children, onClose, actions }) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
-  return (
+  // Se renderiza en <body> para que quede centrado en la pantalla, sin importar el scroll
+  // ni las animaciones de la página que lo contiene.
+  return createPortal(
     <div className="modal-bg" onMouseDown={(e) => e.target === e.currentTarget && onClose?.()}>
       <div className="modal" role="dialog" aria-modal="true">
         <h3>{title}</h3>
@@ -89,7 +92,8 @@ export function Modal({ title, desc, children, onClose, actions }) {
         {children}
         {actions && <div className="modal-actions">{actions}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
