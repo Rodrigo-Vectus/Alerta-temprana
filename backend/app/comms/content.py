@@ -210,27 +210,128 @@ def _affected_products(enr, fallback):
     return out or [fallback]
 
 
-def fortinet_cards(c):
-    s, fam = c["surface"], c["family"]
-    return [
-        {"key": "fortigate", "icon": "shield", "included": True, "product": "FortiGate (NGFW / IPS)",
-         "text": ("Firmas IPS contra intentos de explotación y acceso a la administración restringido por políticas."
-                  if s == "perimetral" else
-                  "Firmas IPS para detectar y bloquear intentos de explotación, y filtrado del tráfico saliente hacia destinos maliciosos.")},
-        {"key": "fortiweb", "icon": "globe", "included": True, "product": "FortiWeb (WAF)",
-         "text": ("Parcheo virtual de las aplicaciones web expuestas mientras se aplica la actualización."
-                  if s == "web" else "Protección de las aplicaciones web publicadas frente a intentos de explotación.")},
-        {"key": "fortimail", "icon": "mail", "included": True, "product": "FortiMail",
-         "text": ("Inspección y sandboxing de adjuntos y archivos de mensaje maliciosos."
-                  if s == "correo" else "Bloqueo del phishing que suele acompañar estas campañas, con sandboxing de adjuntos.")},
-        {"key": "fortiedr", "icon": "monitor", "included": True, "product": "FortiEDR / FortiClient EMS",
-         "text": "Detección de comportamiento anómalo posterior a la explotación e inventario de equipos con versiones vulnerables."},
-        {"key": "fortianalyzer", "icon": "search", "included": True, "product": "FortiAnalyzer / FortiSIEM",
-         "text": ("Detección y búsqueda de robo y reuso de credenciales."
-                  if fam in ("creds", "auth") else "Correlación de eventos y búsqueda de indicadores de compromiso en los registros.")},
-        {"key": "fortinac", "icon": "network", "included": True, "product": "FortiNAC",
-         "text": "Visibilidad de los dispositivos conectados y aislamiento automático de equipos comprometidos."},
-    ]
+SERVER_SURFACES = ("web", "perimetral", "virtualizacion", "general")
+CLIENT_SURFACES = ("correo", "navegador")
+NETWORK_DEVICE = r"d-link|tp-link|zyxel|mikrotik|router|camera|cámara|nas|qnap|synology|iot|dvr|nvr"
+
+
+def fortinet_cards(c, kev=None, cve="", short=""):
+    """Sección "Cómo te protege Fortinet" adaptada a la vulnerabilidad.
+
+    Cada producto de la suite tiene una relevancia según dónde está la falla (perimetral, web, correo,
+    endpoint…), el tipo de ataque y el vector CVSS. Los relevantes salen tildados y ordenados; el resto
+    queda destildado para que el analista lo sume si quiere.
+    """
+    s, fam, vec = c["surface"], c["family"], c["vector"]
+    vendor = (kev.vendor_project if kev else "") or ""
+    prod_text = f"{vendor} {kev.product if kev else ''}".lower()
+    own = vendor.lower().startswith("fortinet")
+    remote = "AV:N" in vec or not vec
+    user_click = "UI:R" in vec or s in CLIENT_SURFACES
+    ransomware = bool(kev and (kev.known_ransomware or "").lower() == "known")
+    cve = cve or (kev.cve_id if kev else "esta vulnerabilidad")
+    short = short or "el sistema afectado"
+    cards = []
+
+    def add(key, icon, product, text, score):
+        cards.append({"key": key, "icon": icon, "product": product, "text": text, "included": score >= 2, "_s": score})
+
+    # ---------------- FortiGate (NGFW / IPS)
+    if own:
+        add("fortigate", "shield", "FortiOS / PSIRT Fortinet",
+            f"Aplicar la versión corregida indicada en el aviso PSIRT de Fortinet para {cve}. Hasta actualizar, restringir el acceso "
+            "a la interfaz de administración y a la VPN SSL solo desde IPs de confianza (local-in policies) y revisar cuentas y configuración.", 5)
+    elif s == "perimetral":
+        add("fortigate", "shield", "FortiGate (NGFW / IPS)",
+            f"Ubicar {short} detrás de políticas que permitan la administración y la VPN solo desde orígenes de confianza, "
+            f"con el perfil IPS de FortiGuard activo para bloquear los intentos de explotación de {cve}.", 4)
+    elif s in CLIENT_SURFACES and fam == "creds":
+        add("fortigate", "shield", "FortiGate (NGFW / IPS)",
+            "Bloquear el tráfico SMB/NTLM saliente hacia internet (TCP 445) para impedir que los hashes de credenciales lleguen "
+            "al servidor del atacante, y filtrar con FortiGuard Web/DNS los destinos maliciosos.", 5)
+    elif s in CLIENT_SURFACES:
+        add("fortigate", "shield", "FortiGate (NGFW / IPS)",
+            f"Filtrado Web y DNS de FortiGuard e inspección SSL para cortar la descarga del contenido malicioso y la comunicación "
+            f"con servidores de comando y control usados al explotar {cve}.", 4)
+    elif remote:
+        add("fortigate", "shield", "FortiGate (NGFW / IPS)",
+            f"Aplicar el perfil IPS con las firmas de FortiGuard para {cve} en las políticas que publican {short}, "
+            "para bloquear los intentos de explotación antes de que lleguen al servidor.", 5)
+    else:
+        add("fortigate", "shield", "FortiGate (segmentación)",
+            f"Segmentar la red interna para limitar el movimiento lateral hacia {short}: la falla requiere acceso previo, "
+            "por lo que cortar ese camino reduce el riesgo.", 3)
+
+    # ---------------- FortiWeb (WAF)
+    if s == "web":
+        add("fortiweb", "globe", "FortiWeb (WAF)",
+            f"Parcheo virtual: las firmas de FortiWeb bloquean las peticiones HTTP que explotan {cve} en {short} "
+            "mientras se aplica la actualización del fabricante.", 5)
+    elif re.search(r"exchange|sharepoint|owa|portal|web", prod_text):
+        add("fortiweb", "globe", "FortiWeb (WAF)",
+            f"Publicar {short} detrás de FortiWeb para filtrar peticiones maliciosas y limitar la exposición de sus servicios web.", 3)
+    else:
+        add("fortiweb", "globe", "FortiWeb (WAF)",
+            "Protección de las aplicaciones web publicadas frente a intentos de explotación.", 0)
+
+    # ---------------- FortiMail
+    if s == "correo":
+        add("fortimail", "mail", "FortiMail",
+            f"Sandboxing de adjuntos y archivos de mensaje (.msg, .eml, documentos de Office) y reescritura de enlaces: "
+            f"el correo es el vector de entrada de {cve}.", 5)
+    elif s == "navegador" or user_click:
+        add("fortimail", "mail", "FortiMail",
+            "Reescritura y análisis de enlaces en los correos, que suelen llevar al usuario al sitio que explota la falla.", 3)
+    elif ransomware:
+        add("fortimail", "mail", "FortiMail",
+            "Bloqueo del phishing usado como acceso inicial en las campañas de ransomware que aprovechan esta falla.", 2)
+    else:
+        add("fortimail", "mail", "FortiMail", "Bloqueo de phishing y sandboxing de adjuntos maliciosos.", 0)
+
+    # ---------------- FortiEDR / FortiClient EMS
+    if s in ("perimetral",) or re.search(NETWORK_DEVICE, prod_text):
+        add("fortiedr", "monitor", "FortiEDR / FortiClient EMS",
+            "Detección de actividad maliciosa en los equipos de la red interna si el atacante logra avanzar desde el perímetro.", 1)
+    elif s in CLIENT_SURFACES or s == "so":
+        add("fortiedr", "monitor", "FortiEDR / FortiClient EMS",
+            f"FortiClient EMS identifica los equipos con versiones vulnerables de {short} para priorizar el parcheo; "
+            "FortiEDR bloquea en tiempo real la ejecución de cargas maliciosas tras la explotación.", 5 if fam in ("rce", "mem", "priv") else 4)
+    elif fam == "priv":
+        add("fortiedr", "monitor", "FortiEDR / FortiClient EMS",
+            f"Detección y bloqueo de la elevación de privilegios y de las acciones posteriores en los servidores con {short}.", 4)
+    else:
+        add("fortiedr", "monitor", "FortiEDR (servidores)",
+            f"Protección en el servidor que ejecuta {short}: bloquea procesos y comandos anómalos lanzados después de la explotación, "
+            "como shells web o descargas de malware.", 4 if fam in ("rce", "mem", "web") else 2)
+
+    # ---------------- FortiAnalyzer / FortiSIEM
+    if fam in ("creds", "auth"):
+        add("fortianalyzer", "search", "FortiAnalyzer / FortiSIEM",
+            "Correlación de eventos para detectar el uso de credenciales robadas: inicios de sesión desde ubicaciones o equipos "
+            "inusuales, y accesos administrativos fuera de horario.", 4)
+    elif s == "perimetral" or own:
+        add("fortianalyzer", "search", "FortiAnalyzer / FortiSIEM",
+            f"Búsqueda en los registros de {short} y del firewall de los indicadores de compromiso publicados para {cve}: "
+            "accesos administrativos, cambios de configuración y conexiones a IPs maliciosas.", 4)
+    else:
+        add("fortianalyzer", "search", "FortiAnalyzer / FortiSIEM",
+            f"Búsqueda retrospectiva de intentos de explotación de {cve} y de las alertas IPS asociadas, para saber si el "
+            "entorno ya fue atacado antes del parche.", 3)
+
+    # ---------------- FortiNAC
+    if re.search(NETWORK_DEVICE, prod_text):
+        add("fortinac", "network", "FortiNAC",
+            f"Inventario y aislamiento de los dispositivos {vendor} conectados a la red, y bloqueo automático si se detecta un compromiso.", 4)
+    elif ransomware or s in ("so", "navegador", "correo"):
+        add("fortinac", "network", "FortiNAC",
+            "Aislamiento automático de los equipos comprometidos para frenar la propagación dentro de la red.", 2)
+    else:
+        add("fortinac", "network", "FortiNAC", "Visibilidad de dispositivos y aislamiento automático de equipos comprometidos.", 0)
+
+    cards.sort(key=lambda x: -x["_s"])
+    for x in cards:
+        x.pop("_s")
+    return cards
 
 
 def build_content(kev, enr, alert) -> dict:
@@ -296,8 +397,10 @@ def build_content(kev, enr, alert) -> dict:
         "subtitle": " · ".join(subtitle),
         "what_happened": what,
         "actions": actions,
-        "fortinet_intro": "Controles para reducir la exposición y detectar actividad sospechosa",
-        "fortinet": fortinet_cards(c),
+        "fortinet_intro": (f"Controles de la suite Fortinet para mitigar {kev.cve_id} mientras se aplica la actualización"
+                           if not kev.vendor_project.lower().startswith("fortinet")
+                           else f"La falla afecta a un producto Fortinet: estos son los pasos y controles para mitigarla"),
+        "fortinet": fortinet_cards(c, kev, kev.cve_id, short),
         "important": f"Las protecciones de red reducen el riesgo, pero no reemplazan la actualización de {short}.",
         "references": refs,
         # --- Informe (adjunto) ---
