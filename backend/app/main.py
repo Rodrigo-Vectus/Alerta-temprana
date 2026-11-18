@@ -7,7 +7,7 @@ from sqlalchemy import text
 
 from app.auth import audit_request, bootstrap_admin, decode_token, write_guard
 from app.db import engine, init_db
-from app.routers import alerts, auth as auth_router, clients, kev, users
+from app.routers import alerts, auth as auth_router, clients, communications, kev, users
 
 
 @asynccontextmanager
@@ -17,11 +17,11 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Vectus SAT - Alerta Temprana", version="0.4.0",
+app = FastAPI(title="Vectus SAT - Alerta Temprana", version="0.6.0",
               docs_url="/api/docs", openapi_url="/api/openapi.json", lifespan=lifespan)
 
 AUDIT_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-AUDIT_SKIP = {"/api/auth/login"}
+AUDIT_SKIP = {"/api/auth/login", "/api/communications/preview"}  # login se audita adentro; preview no modifica nada
 
 
 @app.middleware("http")
@@ -57,3 +57,4 @@ app.include_router(users.router)
 app.include_router(kev.router, dependencies=guarded)
 app.include_router(alerts.router, dependencies=guarded)
 app.include_router(clients.router, dependencies=guarded)
+app.include_router(communications.router, dependencies=guarded)

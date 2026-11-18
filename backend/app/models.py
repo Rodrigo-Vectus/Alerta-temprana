@@ -155,3 +155,21 @@ class AuditLog(Base):
     ip: Mapped[str | None] = mapped_column(String(64))
     detail: Mapped[dict] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class Communication(Base):
+    """Comunicado preventivo asociado a una alerta: newsletter (cuerpo del mail) + informe adjunto."""
+    __tablename__ = "communications"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str | None] = mapped_column(String(32), unique=True)
+    alert_id: Mapped[int] = mapped_column(ForeignKey("alerts.id"), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(16), default="borrador")     # borrador | aprobado | enviado
+    content: Mapped[dict] = mapped_column(JSONB, default=dict)
+    created_by: Mapped[str | None] = mapped_column(String(255))
+    updated_by: Mapped[str | None] = mapped_column(String(255))
+    approved_by: Mapped[str | None] = mapped_column(String(255))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sends: Mapped[list] = mapped_column(JSONB, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

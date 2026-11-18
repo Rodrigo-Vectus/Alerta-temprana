@@ -41,7 +41,7 @@ const NAV = [
     { to: '/alertas', label: 'Alertas', icon: IconAlert, badge: true },
   ] },
   { group: 'Respuesta', items: [
-    { to: '/comunicados', label: 'Comunicados', icon: IconMail, soon: 'Fase 6' },
+    { to: '/comunicados', label: 'Comunicados', icon: IconMail },
     { to: '/casos-de-uso', label: 'Casos de uso SOC', icon: IconFlow, soon: 'Fase 7' },
   ] },
   { group: 'Gestión', items: [

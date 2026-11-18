@@ -17,6 +17,7 @@ JWT_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "8"))
 ROLES = ("admin", "analista", "lector")
 WRITE_ROLES = ("admin", "analista")
 MAX_FAILED, LOCK_MINUTES = 5, 15
+READ_ONLY_POSTS = {"/api/communications/preview"}   # POST que no modifican datos
 PASSWORD_CHANGE_PATHS = {"/api/auth/me", "/api/auth/change-password"}
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -123,7 +124,8 @@ def require_role(*roles):
 
 
 def write_guard(request: Request, user: User = Depends(get_current_user)) -> User:
-    if request.method not in ("GET", "HEAD", "OPTIONS") and user.role not in WRITE_ROLES:
+    if (request.method not in ("GET", "HEAD", "OPTIONS") and user.role not in WRITE_ROLES
+            and request.url.path not in READ_ONLY_POSTS):
         raise HTTPException(403, "Su rol es de solo lectura")
     return user
 

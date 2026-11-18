@@ -14,7 +14,7 @@ export class ApiError extends Error {
   constructor(status, message) { super(message); this.status = status }
 }
 
-async function request(method, path, body) {
+async function request(method, path, body, raw = false) {
   const headers = { Accept: 'application/json' }
   const token = getToken()
   if (token) headers.Authorization = `Bearer ${token}`
@@ -28,6 +28,7 @@ async function request(method, path, body) {
   }
 
   if (res.status === 204) return null
+  if (raw && res.ok) return res
   let data = null
   try { data = await res.json() } catch { /* sin cuerpo */ }
 
@@ -48,4 +49,21 @@ export const api = {
   post: (p, b = {}) => request('POST', p, b),
   patch: (p, b = {}) => request('PATCH', p, b),
   del: (p) => request('DELETE', p),
+  // Respuestas no JSON (HTML, archivos)
+  text: async (p, method = 'GET', body) => (await request(method, p, body, true)).text(),
+  blob: async (p) => {
+    const res = await request('GET', p, undefined, true)
+    const cd = res.headers.get('Content-Disposition') || ''
+    const m = cd.match(/filename="([^"]+)"/)
+    return { blob: await res.blob(), filename: m ? m[1] : 'archivo' }
+  },
+}
+
+export async function download(path) {
+  const { blob, filename } = await api.blob(path)
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = filename
+  document.body.appendChild(a); a.click(); a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 2000)
 }

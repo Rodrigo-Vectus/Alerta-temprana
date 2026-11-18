@@ -9,6 +9,8 @@ import Alerts from './pages/Alerts'
 import Audit from './pages/Audit'
 import ChangePassword from './pages/ChangePassword'
 import Clients from './pages/Clients'
+import CommunicationEditor from './pages/CommunicationEditor'
+import Communications from './pages/Communications'
 import Dashboard from './pages/Dashboard'
 import Login from './pages/Login'
 import Soon from './pages/Soon'
@@ -40,7 +42,8 @@ function App() {
         <Route index element={<Dashboard />} />
         <Route path="alertas" element={<Alerts />} />
         <Route path="alertas/:code" element={<AlertDetail />} />
-        <Route path="comunicados" element={<Soon kind="comunicados" />} />
+        <Route path="comunicados" element={<Communications />} />
+        <Route path="comunicados/:code" element={<CommunicationEditor />} />
         <Route path="casos-de-uso" element={<Soon kind="casos" />} />
         <Route path="clientes" element={<Clients />} />
         <Route path="fabricantes" element={<Vendors />} />

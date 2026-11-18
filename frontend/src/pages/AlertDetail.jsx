@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import { usePageHeader } from '../components/Layout'
@@ -23,13 +23,17 @@ const ACTIONS = {
 const EVENT_LABEL = {
   nueva_en_kev: 'Nueva en CISA KEV', actualizada_en_kev: 'Actualizada en CISA KEV', recalculo: 'Puntaje recalculado',
   reintento_nvd: 'Datos de NVD completados', cambio_estado: 'Cambio de estado',
+  comunicado_generado: 'Comunicado generado', comunicado_regenerado: 'Comunicado regenerado',
 }
 
 export default function AlertDetail() {
   const { code } = useParams()
   const { canWrite } = useAuth()
   const toast = useToast()
+  const navigate = useNavigate()
   const { data: a, error, loading, setData } = useFetch(() => api.get(`/alerts/${code}`), [code])
+  const comm = useFetch(() => api.get(`/communications/by-alert/${code}`), [code])
+  const [generating, setGenerating] = useState(false)
   const [pending, setPending] = useState(null)
   const [comment, setComment] = useState('')
   const [busy, setBusy] = useState(false)
@@ -46,6 +50,12 @@ export default function AlertDetail() {
       setPending(null); setComment('')
     } catch (e) { toast(e.message, 'err') }
     setBusy(false)
+  }
+
+  const generate = async () => {
+    setGenerating(true)
+    try { const r = await api.post(`/communications/from-alert/${a.code}`); toast(`Borrador ${r.code} generado`); navigate(`/comunicados/${r.code}`) } catch (e) { toast(e.message, 'err') }
+    setGenerating(false)
   }
 
   const due = daysUntil(a.due_date)
@@ -142,9 +152,20 @@ export default function AlertDetail() {
             </dl>
           </div>
 
-          <div className="card soon-card">
+          <div className="card" style={{ borderColor: comm.data ? 'var(--accent-l)' : undefined }}>
             <div className="card-title"><IconMail width={14} />Comunicado al cliente</div>
-            <p>El borrador del flyer y del informe con el formato Vectus se va a generar desde acá en la <b>Fase 6</b>.</p>
+            {comm.data ? (
+              <div className="row">
+                <div><div className="code mono" style={{ color: 'var(--accent-l)', fontWeight: 700 }}>{comm.data.code}</div><div className="hint">Estado: {comm.data.status}</div></div>
+                <span className="spacer" />
+                <Link to={`/comunicados/${comm.data.code}`} className="btn btn-sm btn-primary" style={{ textDecoration: 'none' }}>Abrir</Link>
+              </div>
+            ) : (
+              <>
+                <p className="hint" style={{ marginBottom: 14 }}>Genera el borrador del newsletter (cuerpo del mail) y del informe adjunto con el formato Vectus, a partir de los datos públicos de CISA y NVD.</p>
+                {canWrite ? <button className="btn btn-sm btn-primary" onClick={generate} disabled={generating}>{generating ? 'Generando…' : 'Generar comunicado'}</button> : <span className="hint">Sin comunicado todavía.</span>}
+              </>
+            )}
           </div>
           <div className="card soon-card">
             <div className="card-title"><IconFlow width={14} />Caso de uso SOC</div>
