@@ -80,3 +80,9 @@ def collector_runs(limit: int = Query(10, le=100)):
         return [{"id": r.id, "status": r.status, "version": r.catalog_version, "total": r.total,
                  "new": r.new_count, "updated": r.updated_count, "error": r.error,
                  "started_at": r.started_at, "finished_at": r.finished_at} for r in rows]
+
+
+from app.routers import alerts as alerts_router, clients as clients_router  # noqa: E402
+
+app.include_router(alerts_router.router)
+app.include_router(clients_router.router)
