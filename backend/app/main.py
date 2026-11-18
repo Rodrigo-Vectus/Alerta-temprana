@@ -1,31 +1,44 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Query
+from fastapi import Depends, FastAPI, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
-from sqlalchemy import func, select, text
+from sqlalchemy import text
 
-from app.db import SessionLocal, engine, init_db
-from app.models import CollectorRun, KevEvent, KevVulnerability
+from app.auth import audit_request, bootstrap_admin, decode_token, write_guard
+from app.db import engine, init_db
+from app.routers import alerts, auth as auth_router, clients, kev, users
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    bootstrap_admin()
     yield
 
 
-app = FastAPI(title="Vectus SAT - Alerta Temprana", version="0.2.0",
+app = FastAPI(title="Vectus SAT - Alerta Temprana", version="0.4.0",
               docs_url="/api/docs", openapi_url="/api/openapi.json", lifespan=lifespan)
 
+AUDIT_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+AUDIT_SKIP = {"/api/auth/login"}
 
-def _vuln(v: KevVulnerability):
-    return {
-        "cve_id": v.cve_id, "vendor": v.vendor_project, "product": v.product,
-        "name": v.vulnerability_name, "description": v.short_description,
-        "ransomware": v.known_ransomware, "cwes": v.cwes,
-        "date_added": v.date_added, "due_date": v.due_date,
-        "required_action": v.required_action, "change_count": v.change_count,
-    }
+
+@app.middleware("http")
+async def audit_writes(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if request.method in AUDIT_METHODS and path.startswith("/api/") and path not in AUDIT_SKIP:
+        uid = None
+        authz = request.headers.get("authorization", "")
+        if authz.lower().startswith("bearer "):
+            payload = decode_token(authz[7:])
+            uid = int(payload["sub"]) if payload else None
+        try:
+            await run_in_threadpool(audit_request, uid, request, response.status_code)
+        except Exception:
+            pass
+    return response
 
 
 @app.get("/api/health")
@@ -38,51 +51,9 @@ def health():
         return JSONResponse(status_code=503, content={"status": "degraded", "db": str(exc)})
 
 
-@app.get("/api/kev/stats")
-def kev_stats():
-    with SessionLocal() as db:
-        last = db.scalar(select(CollectorRun).order_by(CollectorRun.id.desc()).limit(1))
-        return {
-            "total_kev": db.scalar(select(func.count()).select_from(KevVulnerability)),
-            "ransomware_known": db.scalar(select(func.count()).where(KevVulnerability.known_ransomware == "Known")),
-            "pending_events": db.scalar(select(func.count()).where(KevEvent.processed.is_(False))),
-            "last_run": None if not last else {
-                "status": last.status, "catalog_version": last.catalog_version,
-                "started_at": last.started_at, "new": last.new_count,
-                "updated": last.updated_count, "error": last.error,
-            },
-        }
-
-
-@app.get("/api/kev/recent")
-def kev_recent(limit: int = Query(20, le=200)):
-    with SessionLocal() as db:
-        rows = db.scalars(select(KevVulnerability)
-                          .order_by(KevVulnerability.date_added.desc(), KevVulnerability.cve_id.desc())
-                          .limit(limit)).all()
-        return [_vuln(v) for v in rows]
-
-
-@app.get("/api/kev/events")
-def kev_events(limit: int = Query(50, le=500), pending_only: bool = False):
-    with SessionLocal() as db:
-        q = select(KevEvent).order_by(KevEvent.id.desc()).limit(limit)
-        if pending_only:
-            q = q.where(KevEvent.processed.is_(False))
-        return [{"id": e.id, "cve_id": e.cve_id, "type": e.event_type, "changed": e.changed_fields,
-                 "processed": e.processed, "created_at": e.created_at} for e in db.scalars(q).all()]
-
-
-@app.get("/api/collector/runs")
-def collector_runs(limit: int = Query(10, le=100)):
-    with SessionLocal() as db:
-        rows = db.scalars(select(CollectorRun).order_by(CollectorRun.id.desc()).limit(limit)).all()
-        return [{"id": r.id, "status": r.status, "version": r.catalog_version, "total": r.total,
-                 "new": r.new_count, "updated": r.updated_count, "error": r.error,
-                 "started_at": r.started_at, "finished_at": r.finished_at} for r in rows]
-
-
-from app.routers import alerts as alerts_router, clients as clients_router  # noqa: E402
-
-app.include_router(alerts_router.router)
-app.include_router(clients_router.router)
+guarded = [Depends(write_guard)]
+app.include_router(auth_router.router)
+app.include_router(users.router)
+app.include_router(kev.router, dependencies=guarded)
+app.include_router(alerts.router, dependencies=guarded)
+app.include_router(clients.router, dependencies=guarded)
