@@ -1,10 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.db import SessionLocal
-from app.models import Client, ClientTechnology, WatchVendor
+from app.models import Client, ClientTechnology, KevVulnerability, WatchVendor
 
 router = APIRouter(prefix="/api", tags=["inventario"])
 
@@ -14,6 +14,19 @@ class ClientIn(BaseModel):
     country: str | None = None
     sector: str | None = None
     contact_email: str | None = None
+
+
+class ClientUpdate(BaseModel):
+    name: str | None = None
+    country: str | None = None
+    sector: str | None = None
+    contact_email: str | None = None
+    active: bool | None = None
+
+
+class WatchIn(BaseModel):
+    vendor: str
+    tier: int = 2
 
 
 class TechIn(BaseModel):
@@ -50,6 +63,22 @@ def create_client(body: ClientIn):
         return _client(db, c)
 
 
+@router.patch("/clients/{client_id}")
+def update_client(client_id: int, body: ClientUpdate):
+    with SessionLocal() as db:
+        c = db.get(Client, client_id)
+        if not c:
+            raise HTTPException(404, "Cliente no encontrado")
+        for k, v in body.model_dump(exclude_none=True).items():
+            setattr(c, k, v)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(409, "Ya existe un cliente con ese nombre")
+        return _client(db, c)
+
+
 @router.post("/clients/{client_id}/technologies", status_code=201)
 def add_technologies(client_id: int, body: list[TechIn]):
     with SessionLocal() as db:
@@ -60,6 +89,16 @@ def add_technologies(client_id: int, body: list[TechIn]):
             db.add(ClientTechnology(client_id=client_id, **t.model_dump()))
         db.commit()
         return _client(db, c)
+
+
+@router.delete("/clients/{client_id}/technologies/{tech_id}", status_code=204)
+def delete_technology(client_id: int, tech_id: int):
+    with SessionLocal() as db:
+        t = db.get(ClientTechnology, tech_id)
+        if not t or t.client_id != client_id:
+            raise HTTPException(404, "Tecnología no encontrada")
+        db.delete(t)
+        db.commit()
 
 
 @router.delete("/clients/{client_id}", status_code=204)
@@ -79,3 +118,41 @@ def watchlist():
     with SessionLocal() as db:
         rows = db.scalars(select(WatchVendor).order_by(WatchVendor.tier, WatchVendor.vendor)).all()
         return [{"id": w.id, "vendor": w.vendor, "tier": w.tier} for w in rows]
+
+
+@router.post("/watchlist", status_code=201)
+def add_watch(body: WatchIn):
+    if body.tier not in (1, 2):
+        raise HTTPException(400, "El nivel debe ser 1 (uso masivo) o 2 (vigilado)")
+    with SessionLocal() as db:
+        w = WatchVendor(vendor=body.vendor.strip(), tier=body.tier)
+        db.add(w)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(409, "Ese fabricante ya está en la lista")
+        return {"id": w.id, "vendor": w.vendor, "tier": w.tier}
+
+
+@router.delete("/watchlist/{watch_id}", status_code=204)
+def delete_watch(watch_id: int):
+    with SessionLocal() as db:
+        w = db.get(WatchVendor, watch_id)
+        if not w:
+            raise HTTPException(404, "No encontrado")
+        db.delete(w)
+        db.commit()
+
+
+@router.get("/catalog/vendors")
+def catalog_vendors(q: str = "", limit: int = Query(15, le=50)):
+    """Sugerencias con los nombres exactos que usa CISA, para cargar el inventario sin errores."""
+    with SessionLocal() as db:
+        query = (select(KevVulnerability.vendor_project, KevVulnerability.product, func.count())
+                 .group_by(KevVulnerability.vendor_project, KevVulnerability.product)
+                 .order_by(func.count().desc()))
+        if q.strip():
+            like = f"%{q.strip()}%"
+            query = query.where(KevVulnerability.vendor_project.ilike(like) | KevVulnerability.product.ilike(like))
+        return [{"vendor": v, "product": p, "count": n} for v, p, n in db.execute(query.limit(limit)).all()]

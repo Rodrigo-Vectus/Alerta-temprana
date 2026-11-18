@@ -1,0 +1,7 @@
+.git
+data
+backups
+backend
+**/node_modules
+**/dist
+.env
