@@ -353,16 +353,24 @@ export default function CommunicationEditor() {
         </Modal>
       )}
 
-      {confirmSend && (
-        <Modal title="Enviar a clientes" desc={`El newsletter y el informe PDF se envían ahora a ${rcpt.data?.filter((r) => !r.sent).length ?? 0} contacto(s), un mail individual por persona.`}
-          onClose={() => setConfirmSend(false)}
-          actions={<><button className="btn btn-secondary" onClick={() => setConfirmSend(false)}>Cancelar</button>
-            <button className="btn btn-success" onClick={sendNow} disabled={!!busy || !rcpt.data?.some((r) => !r.sent)}>{busy === 'now' ? 'Programando…' : 'Enviar'}</button></>}>
-          <div className="stack" style={{ gap: 6, maxHeight: 220, overflowY: 'auto' }}>
-            {(rcpt.data || []).filter((r) => !r.sent).map((r) => <div key={r.email} className="hint"><b>{r.client}</b> · {r.name ? `${r.name} · ` : ''}{r.email}</div>)}
-          </div>
-        </Modal>
-      )}
+      {confirmSend && (() => {
+        const pending = (rcpt.data || []).filter((r) => !r.sent)
+        const byClient = Object.entries(pending.reduce((acc, r) => ({ ...acc, [r.client]: (acc[r.client] || 0) + 1 }), {}))
+          .sort((a, b) => a[0].localeCompare(b[0]))
+        return (
+          <Modal title="Enviar a clientes"
+            desc={`El newsletter y el informe PDF se envían ahora a ${byClient.length} cliente(s). Cada persona de contacto recibe su propio mail.`}
+            onClose={() => setConfirmSend(false)}
+            actions={<><button className="btn btn-secondary" onClick={() => setConfirmSend(false)}>Cancelar</button>
+              <button className="btn btn-success" onClick={sendNow} disabled={!!busy || pending.length === 0}>{busy === 'now' ? 'Programando…' : 'Enviar'}</button></>}>
+            <div className="chips" style={{ maxHeight: 220, overflowY: 'auto' }}>
+              {byClient.map(([client, n]) => (
+                <span key={client} className="chip" style={{ cursor: 'default' }}>{client}<span className="badge b-info" style={{ marginLeft: 4 }}>{n} contacto{n > 1 ? 's' : ''}</span></span>
+              ))}
+            </div>
+          </Modal>
+        )
+      })()}
 
       {confirmRegen && (
         <Modal title="Regenerar desde la plantilla" desc="Se descartan las ediciones y se vuelve a armar todo el contenido con los datos actuales de CISA y NVD. Si estaba programado, sigue programado para la misma hora."
