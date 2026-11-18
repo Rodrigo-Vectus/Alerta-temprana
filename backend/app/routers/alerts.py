@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 
 from app.auth import get_current_user
 from app.db import SessionLocal
-from app.models import Alert, CollectorRun, CveEnrichment, KevVulnerability, User
+from app.models import Alert, CollectorRun, Communication, CveEnrichment, KevVulnerability, User
 from app.scoring import rescore_all
 
 router = APIRouter(prefix="/api/alerts", tags=["alertas"])
@@ -22,7 +22,7 @@ STATUSES = {
     "descartada": "Descartada",
     "cerrada": "Cerrada",
 }
-MANUAL_TARGETS = {"candidata", "monitoreo", "en_revision", "aprobada", "descartada", "cerrada"}
+MANUAL_TARGETS = {"candidata", "monitoreo", "en_revision", "descartada", "cerrada"}
 
 
 class StatusIn(BaseModel):
@@ -132,6 +132,11 @@ def change_status(code: str, body: StatusIn, user: User = Depends(get_current_us
                  "usuario": user.email, "comentario": body.comment.strip(), "score": a.score}
         a.status = body.status
         a.history = list(a.history or []) + [entry]
+        if body.status in ("descartada", "cerrada"):
+            comm = db.scalar(select(Communication).where(Communication.alert_id == a.id, Communication.status == "programado"))
+            if comm:
+                comm.status = "cancelado"
+                a.history = list(a.history) + [{**entry, "evento": "envio_cancelado", "comentario": f"{comm.code} cancelado al {body.status} la alerta"}]
         db.commit()
         row = db.execute(_base_query().where(Alert.id == a.id)).first()
         return _alert(*row, full=True)

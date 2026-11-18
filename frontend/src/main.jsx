@@ -13,6 +13,7 @@ import CommunicationEditor from './pages/CommunicationEditor'
 import Communications from './pages/Communications'
 import Dashboard from './pages/Dashboard'
 import Login from './pages/Login'
+import Settings from './pages/Settings'
 import Soon from './pages/Soon'
 import Users from './pages/Users'
 import Vendors from './pages/Vendors'
@@ -49,6 +50,7 @@ function App() {
         <Route path="fabricantes" element={<Vendors />} />
         <Route path="usuarios" element={<RequireAuth admin><Users /></RequireAuth>} />
         <Route path="auditoria" element={<RequireAuth admin><Audit /></RequireAuth>} />
+        <Route path="configuracion" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

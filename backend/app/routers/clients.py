@@ -1,10 +1,12 @@
+import re
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.db import SessionLocal
-from app.models import Client, ClientTechnology, KevVulnerability, WatchVendor
+from app.models import Client, ClientContact, ClientTechnology, KevVulnerability, WatchVendor
 
 router = APIRouter(prefix="/api", tags=["inventario"])
 
@@ -29,6 +31,29 @@ class WatchIn(BaseModel):
     tier: int = 2
 
 
+class ContactIn(BaseModel):
+    name: str = ""
+    email: str
+    position: str | None = None
+
+
+class ContactUpdate(BaseModel):
+    name: str | None = None
+    email: str | None = None
+    position: str | None = None
+    active: bool | None = None
+
+
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _email(e: str) -> str:
+    e = (e or "").strip().lower()
+    if not EMAIL_RE.match(e):
+        raise HTTPException(400, f"Email inválido: {e or '(vacío)'}")
+    return e
+
+
 class TechIn(BaseModel):
     vendor: str
     product: str = ""
@@ -38,10 +63,21 @@ class TechIn(BaseModel):
 
 def _client(db, c):
     techs = db.scalars(select(ClientTechnology).where(ClientTechnology.client_id == c.id)).all()
-    return {"id": c.id, "name": c.name, "country": c.country, "sector": c.sector,
-            "contact_email": c.contact_email, "active": c.active,
+    contacts = db.scalars(select(ClientContact).where(ClientContact.client_id == c.id).order_by(ClientContact.name, ClientContact.email)).all()
+    return {"id": c.id, "name": c.name, "country": c.country, "sector": c.sector, "active": c.active,
+            "contacts": [{"id": x.id, "name": x.name, "email": x.email, "position": x.position, "active": x.active} for x in contacts],
             "technologies": [{"id": t.id, "vendor": t.vendor, "product": t.product, "version": t.version,
                               "internet_exposed": t.internet_exposed} for t in techs]}
+
+
+@router.get("/clients/recipients")
+def recipients_summary():
+    """Quiénes reciben las alertas automáticas: contactos activos de clientes activos."""
+    with SessionLocal() as db:
+        rows = db.execute(select(ClientContact.email, Client.name)
+                          .join(Client, Client.id == ClientContact.client_id)
+                          .where(Client.active.is_(True), ClientContact.active.is_(True))).all()
+        return {"contacts": len({e for e, _ in rows}), "clients": len({c for _, c in rows})}
 
 
 @router.get("/clients")
@@ -91,6 +127,51 @@ def add_technologies(client_id: int, body: list[TechIn]):
         return _client(db, c)
 
 
+@router.post("/clients/{client_id}/contacts", status_code=201)
+def add_contact(client_id: int, body: ContactIn):
+    with SessionLocal() as db:
+        c = db.get(Client, client_id)
+        if not c:
+            raise HTTPException(404, "Cliente no encontrado")
+        db.add(ClientContact(client_id=client_id, name=body.name.strip(), email=_email(body.email),
+                             position=(body.position or "").strip() or None))
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(409, "Ese email ya está cargado para este cliente")
+        return _client(db, c)
+
+
+@router.patch("/clients/{client_id}/contacts/{contact_id}")
+def update_contact(client_id: int, contact_id: int, body: ContactUpdate):
+    with SessionLocal() as db:
+        x = db.get(ClientContact, contact_id)
+        if not x or x.client_id != client_id:
+            raise HTTPException(404, "Contacto no encontrado")
+        data = body.model_dump(exclude_none=True)
+        if "email" in data:
+            data["email"] = _email(data["email"])
+        for k, v in data.items():
+            setattr(x, k, v)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(409, "Ese email ya está cargado para este cliente")
+        return _client(db, db.get(Client, client_id))
+
+
+@router.delete("/clients/{client_id}/contacts/{contact_id}", status_code=204)
+def delete_contact(client_id: int, contact_id: int):
+    with SessionLocal() as db:
+        x = db.get(ClientContact, contact_id)
+        if not x or x.client_id != client_id:
+            raise HTTPException(404, "Contacto no encontrado")
+        db.delete(x)
+        db.commit()
+
+
 @router.delete("/clients/{client_id}/technologies/{tech_id}", status_code=204)
 def delete_technology(client_id: int, tech_id: int):
     with SessionLocal() as db:
@@ -109,6 +190,8 @@ def delete_client(client_id: int):
             raise HTTPException(404, "Cliente no encontrado")
         for t in db.scalars(select(ClientTechnology).where(ClientTechnology.client_id == client_id)).all():
             db.delete(t)
+        for x in db.scalars(select(ClientContact).where(ClientContact.client_id == client_id)).all():
+            db.delete(x)
         db.delete(c)
         db.commit()
 

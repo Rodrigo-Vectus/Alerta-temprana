@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from app.auth import WRITE_ROLES, get_current_user
 from app.comms import mailer
+from app.comms.automation import recipients
 from app.comms.content import build_content
 from app.comms.document import build_docx
 from app.comms.newsletter import render_newsletter
@@ -63,7 +64,7 @@ def _summary(comm: Communication, alert: Alert, kev: KevVulnerability):
             "score": alert.score, "cve_id": alert.cve_id, "vendor": kev.vendor_project, "product": kev.product,
             "title": comm.content.get("title"), "subject": comm.content.get("subject"),
             "sends": len(comm.sends or []), "last_send": (comm.sends or [None])[-1],
-            "created_by": comm.created_by, "approved_by": comm.approved_by, "approved_at": comm.approved_at,
+            "created_by": comm.created_by, "auto": comm.auto, "scheduled_at": comm.scheduled_at,
             "created_at": comm.created_at, "updated_at": comm.updated_at}
 
 
@@ -139,8 +140,7 @@ def create_from_alert(alert_code: str, regenerate: bool = False, user: User = De
         else:
             if comm.status == "enviado":
                 raise HTTPException(400, "El comunicado ya fue enviado; no se puede regenerar")
-            comm.content, comm.status, comm.updated_by = content, "borrador", user.email
-            comm.approved_by = comm.approved_at = None
+            comm.content, comm.updated_by = content, user.email
             _alert_history(alert, "comunicado_regenerado", user, comentario=comm.code)
         if alert.status in ("candidata", "monitoreo", "descartada_auto"):
             _set_alert_status(alert, "en_revision", user, f"Borrador {comm.code} generado")
@@ -160,34 +160,46 @@ def update_content(code: str, body: ContentIn, user: User = Depends(get_current_
             raise HTTPException(400, "El comunicado ya fue enviado; no se puede editar")
         comm.content = body.content
         comm.updated_by = user.email
-        if comm.status == "aprobado":
-            comm.status, comm.approved_by, comm.approved_at = "borrador", None, None
         db.commit()
         return _full(comm, alert, kev)
 
 
-@router.post("/{code}/approve")
-def approve(code: str, user: User = Depends(get_current_user)):
+@router.get("/{code}/recipients")
+def comm_recipients(code: str):
+    with SessionLocal() as db:
+        comm, _, _ = _load(db, code)
+        rc = recipients(db)
+        sent_ok = {to for s in (comm.sends or []) if s.get("tipo") == "clientes" and s.get("ok") for to in s["to"]}
+        return [{**r, "sent": r["email"] in sent_ok} for r in rc]
+
+
+@router.post("/{code}/send-now")
+def send_now(code: str, user: User = Depends(get_current_user)):
+    """Programa el envío a todos los contactos para ya (el worker lo despacha en menos de un minuto).
+    Si ya se envió, reintenta solo los contactos que fallaron o se agregaron después."""
     _require_write(user)
     with SessionLocal() as db:
         comm, alert, kev = _load(db, code)
-        if comm.status != "borrador":
-            raise HTTPException(400, f"El comunicado está {comm.status}")
-        comm.status, comm.approved_by, comm.approved_at = "aprobado", user.email, _now()
-        _set_alert_status(alert, "aprobada", user, f"Comunicado {comm.code} aprobado")
+        if not recipients(db):
+            raise HTTPException(400, "No hay contactos activos cargados en Clientes")
+        if not mailer.is_configured():
+            raise HTTPException(400, "El correo no está configurado en el servidor")
+        prev = comm.status
+        comm.status, comm.scheduled_at, comm.updated_by = "programado", _now(), user.email
+        _alert_history(alert, "envio_manual", user, comentario=f"{comm.code}: envío a clientes solicitado (estado previo: {prev})")
         db.commit()
         return _full(comm, alert, kev)
 
 
-@router.post("/{code}/reopen")
-def reopen(code: str, user: User = Depends(get_current_user)):
+@router.post("/{code}/cancel")
+def cancel(code: str, user: User = Depends(get_current_user)):
     _require_write(user)
     with SessionLocal() as db:
         comm, alert, kev = _load(db, code)
-        if comm.status != "aprobado":
-            raise HTTPException(400, "Solo se puede volver a borrador un comunicado aprobado")
-        comm.status, comm.approved_by, comm.approved_at = "borrador", None, None
-        _set_alert_status(alert, "en_revision", user, f"Comunicado {comm.code} vuelto a borrador")
+        if comm.status != "programado":
+            raise HTTPException(400, "Solo se puede cancelar un comunicado programado")
+        comm.status, comm.updated_by = "cancelado", user.email
+        _alert_history(alert, "envio_cancelado", user, comentario=f"{comm.code} cancelado antes del envío")
         db.commit()
         return _full(comm, alert, kev)
 

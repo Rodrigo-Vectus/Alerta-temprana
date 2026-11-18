@@ -4,7 +4,7 @@ import { api, storage } from '../api'
 import { useAuth } from '../auth'
 import { timeAgo } from './ui'
 import {
-  IconAlert, IconBuilding, IconDashboard, IconEye, IconFlow, IconKey, IconList, IconLogout, IconMail, IconMenu, IconUsers,
+  IconAlert, IconBuilding, IconGear, IconDashboard, IconEye, IconFlow, IconKey, IconList, IconLogout, IconMail, IconMenu, IconUsers,
 } from './icons'
 
 // ---------- Título de página (cada página lo define) ----------
@@ -51,6 +51,7 @@ const NAV = [
   { group: 'Administración', admin: true, items: [
     { to: '/usuarios', label: 'Usuarios', icon: IconUsers },
     { to: '/auditoria', label: 'Auditoría', icon: IconList },
+    { to: '/configuracion', label: 'Configuración', icon: IconGear },
   ] },
 ]
 

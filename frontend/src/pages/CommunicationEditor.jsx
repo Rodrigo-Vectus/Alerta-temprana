@@ -67,6 +67,9 @@ export default function CommunicationEditor() {
   const toast = useToast()
   const { data, error, loading, setData } = useFetch(() => api.get(`/communications/${code}`), [code])
   const mail = useFetch(() => api.get('/communications/mail-status'), [])
+  const rcpt = useFetch(() => api.get(`/communications/${code}/recipients`), [code, data?.status])
+  const [confirmSend, setConfirmSend] = useState(false)
+  const [, tick] = useState(0)
   const [content, setContent] = useState(null)
   const [dirty, setDirty] = useState(false)
   const [tab, setTab] = useState('newsletter')
@@ -92,6 +95,16 @@ export default function CommunicationEditor() {
 
   useEffect(() => () => pdfUrl && URL.revokeObjectURL(pdfUrl), [pdfUrl])
 
+  // Mientras está programado: refrescar el contador y el estado (el worker lo envía solo)
+  useEffect(() => {
+    if (data?.status !== 'programado') return undefined
+    const t = setInterval(async () => {
+      tick((n) => n + 1)
+      try { const r = await api.get(`/communications/${code}`); if (r.status !== 'programado') setData(r) } catch { /* reintenta */ }
+    }, 15000)
+    return () => clearInterval(t)
+  }, [data?.status, code, setData])
+
   if (loading && !data) return <Loading />
   if (error) return <><Link to="/comunicados" className="back"><IconArrowLeft width={14} />Volver</Link><ErrorBox error={error} /></>
   if (!content) return <Loading />
@@ -105,11 +118,11 @@ export default function CommunicationEditor() {
     return null
   }
   const save = () => run('save', async () => { const r = await api.patch(`/communications/${code}`, { content }); setData(r) }, 'Cambios guardados')
-  const approve = async () => {
+  const sendNow = async () => {
     if (dirty) await save()
-    await run('approve', async () => setData(await api.post(`/communications/${code}/approve`)), 'Comunicado aprobado')
+    await run('now', async () => { setData(await api.post(`/communications/${code}/send-now`)); setConfirmSend(false) }, 'Envío en curso: sale en menos de un minuto')
   }
-  const reopen = () => run('approve', async () => setData(await api.post(`/communications/${code}/reopen`)), 'Comunicado vuelto a borrador')
+  const cancelSend = () => run('cancel', async () => setData(await api.post(`/communications/${code}/cancel`)), 'Envío automático cancelado')
   const regenerate = () => run('regen', async () => { setData(await api.post(`/communications/from-alert/${data.alert_code}?regenerate=true`)); setConfirmRegen(false) }, 'Contenido regenerado desde la plantilla')
   const loadPdf = () => run('pdf', async () => {
     if (dirty) await save()
@@ -141,17 +154,33 @@ export default function CommunicationEditor() {
             {data.clients.length > 0 && <span className="badge b-danger">Clientes afectados: {data.clients.join(', ')}</span>}
             {dirty && <span className="badge b-warn">Cambios sin guardar</span>}
           </div>
-          {data.approved_by && <div className="hint" style={{ marginTop: 8 }}>Aprobado por {data.approved_by} · {fmtDateTime(data.approved_at)}</div>}
+          {data.auto && <div className="hint" style={{ marginTop: 8 }}>Generado automáticamente al detectar la vulnerabilidad en CISA KEV</div>}
         </div>
         {canWrite && (
           <div className="row wrap" style={{ justifyContent: 'flex-end', maxWidth: 380 }}>
             {dirty && <button className="btn btn-sm btn-primary" onClick={save} disabled={!!busy}>{busy === 'save' ? 'Guardando…' : 'Guardar cambios'}</button>}
-            {data.status === 'borrador' && <button className="btn btn-sm btn-success" onClick={approve} disabled={!!busy}>Aprobar</button>}
-            {data.status === 'aprobado' && <button className="btn btn-sm btn-secondary" onClick={reopen} disabled={!!busy}>Volver a borrador</button>}
+            {data.status === 'programado' && <>
+              <button className="btn btn-sm btn-success" onClick={sendNow} disabled={!!busy}>Enviar ahora</button>
+              <button className="btn btn-sm btn-danger" onClick={cancelSend} disabled={!!busy}>Cancelar envío</button>
+            </>}
+            {['borrador', 'aprobado', 'cancelado', 'error'].includes(data.status) && <button className="btn btn-sm btn-success" onClick={() => setConfirmSend(true)} disabled={!!busy}>Enviar a clientes</button>}
+            {data.status === 'enviado' && rcpt.data?.some((r) => !r.sent) && <button className="btn btn-sm btn-secondary" onClick={() => setConfirmSend(true)} disabled={!!busy}>Enviar a pendientes</button>}
             <button className="btn btn-sm btn-secondary" onClick={() => setSendModal({ to: user.email, docx: false })} disabled={!!busy}><IconMail />Enviar prueba</button>
           </div>
         )}
       </div>
+
+      {data.status === 'programado' && data.scheduled_at && (() => {
+        const mins = Math.max(0, Math.ceil((new Date(data.scheduled_at) - Date.now()) / 60000))
+        return (
+          <div className="alert-box info" style={{ marginBottom: 18, borderColor: 'var(--warn)', background: 'var(--warn-bg)' }}>
+            <b>Envío automático programado</b> para las <b>{new Date(data.scheduled_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })} hs</b>
+            {mins > 0 ? ` (en ${mins} min)` : ' (en curso)'} a <b>{rcpt.data?.length ?? '…'} contacto(s)</b>.
+            {' '}Podés editar el texto hasta esa hora: los cambios guardados se incluyen en el envío. Si no hay que enviarlo, tocá <b>Cancelar envío</b>.
+          </div>
+        )
+      })()}
+      {data.status === 'error' && <div className="alert-box err" style={{ marginBottom: 18 }}>El último envío falló. Revisá la pestaña Envíos y volvé a intentar con <b>Enviar a clientes</b>.</div>}
 
       <div className="toolbar">
         <div className="chips">
@@ -274,12 +303,26 @@ export default function CommunicationEditor() {
               <div className="timeline">
                 {[...data.sends_log].reverse().map((s, i) => (
                   <div className="tl-item" key={i}>
-                    <div className="tl-head">{s.tipo === 'prueba' ? 'Envío de prueba' : 'Envío a clientes'} · {s.ok ? <span className="badge b-ok">OK</span> : <span className="badge b-danger">Error</span>}</div>
+                    <div className="tl-head">{{ prueba: 'Envío de prueba', aviso_soc: 'Aviso al SOC', clientes: `Envío a cliente${s.cliente ? ` · ${s.cliente}` : ''}` }[s.tipo] || s.tipo} · {s.ok ? <span className="badge b-ok">OK</span> : <span className="badge b-danger">Error</span>}</div>
                     <div className="tl-meta">{fmtDateTime(s.fecha)} · {s.usuario} → {s.to.join(', ')}</div>
                     {s.adjuntos?.length > 0 && <div className="tl-body">Adjuntos: {s.adjuntos.join(', ')}</div>}
                     {s.error && <div className="tl-body" style={{ color: 'var(--danger)' }}>{s.error}</div>}
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+          <div className="stack">
+          <div className="card">
+            <div className="card-title">Destinatarios ({rcpt.data?.length ?? 0})</div>
+            {rcpt.data?.length === 0 ? <div className="alert-box err">No hay contactos activos. Cargalos en <Link to="/clientes">Clientes</Link>.</div> : (
+              <div className="table-wrap">
+                <table className="tbl"><thead><tr><th>Cliente</th><th>Contacto</th><th>Estado</th></tr></thead>
+                  <tbody>{(rcpt.data || []).map((r) => (
+                    <tr key={r.email}><td className="prod">{r.client}</td><td><div>{r.name || '—'}</div><div className="sub mono">{r.email}</div></td>
+                      <td>{r.sent ? <span className="badge b-ok">Enviado</span> : <span className="badge b-muted">Pendiente</span>}</td></tr>
+                  ))}</tbody>
+                </table>
               </div>
             )}
           </div>
@@ -291,13 +334,14 @@ export default function CommunicationEditor() {
                 <dt>Servidor</dt><dd className="mono" style={{ fontSize: 12 }}>{mail.data.host}:{mail.data.port} ({mail.data.security})</dd>
               </dl>
             ) : <div className="alert-box info">Falta configurar el SMTP en el <span className="mono">.env</span> del servidor.</div>)}
-            <p className="hint" style={{ marginTop: 14 }}>El envío a clientes afectados (según el inventario) se habilita en la Fase 8. Por ahora solo envíos de prueba.</p>
+            <p className="hint" style={{ marginTop: 14 }}>Cada contacto recibe un mail individual: nadie ve las direcciones de otros clientes.</p>
+          </div>
           </div>
         </div>
       )}
 
       {sendModal && (
-        <Modal title="Enviar mail de prueba" desc="Se envía el newsletter como cuerpo del mail y el informe en PDF adjunto, con el asunto marcado como [PRUEBA]. No se envía a clientes."
+        <Modal title="Enviar mail de prueba" desc="Se envía solo a esta dirección, con el asunto marcado como [PRUEBA]. No llega a ningún cliente."
           onClose={() => setSendModal(null)}
           actions={<><button className="btn btn-secondary" onClick={() => setSendModal(null)}>Cancelar</button>
             <button className="btn btn-primary" onClick={sendTest} disabled={busy === 'send' || !mail.data?.configured}>{busy === 'send' ? 'Enviando…' : 'Enviar'}</button></>}>
@@ -309,8 +353,19 @@ export default function CommunicationEditor() {
         </Modal>
       )}
 
+      {confirmSend && (
+        <Modal title="Enviar a clientes" desc={`El newsletter y el informe PDF se envían ahora a ${rcpt.data?.filter((r) => !r.sent).length ?? 0} contacto(s), un mail individual por persona.`}
+          onClose={() => setConfirmSend(false)}
+          actions={<><button className="btn btn-secondary" onClick={() => setConfirmSend(false)}>Cancelar</button>
+            <button className="btn btn-success" onClick={sendNow} disabled={!!busy || !rcpt.data?.some((r) => !r.sent)}>{busy === 'now' ? 'Programando…' : 'Enviar'}</button></>}>
+          <div className="stack" style={{ gap: 6, maxHeight: 220, overflowY: 'auto' }}>
+            {(rcpt.data || []).filter((r) => !r.sent).map((r) => <div key={r.email} className="hint"><b>{r.client}</b> · {r.name ? `${r.name} · ` : ''}{r.email}</div>)}
+          </div>
+        </Modal>
+      )}
+
       {confirmRegen && (
-        <Modal title="Regenerar desde la plantilla" desc="Se descartan las ediciones y se vuelve a armar todo el contenido con los datos actuales de CISA y NVD. El comunicado vuelve a borrador."
+        <Modal title="Regenerar desde la plantilla" desc="Se descartan las ediciones y se vuelve a armar todo el contenido con los datos actuales de CISA y NVD. Si estaba programado, sigue programado para la misma hora."
           onClose={() => setConfirmRegen(false)}
           actions={<><button className="btn btn-secondary" onClick={() => setConfirmRegen(false)}>Cancelar</button><button className="btn btn-danger" onClick={regenerate} disabled={!!busy}>Regenerar</button></>} />
       )}

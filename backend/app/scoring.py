@@ -203,7 +203,7 @@ def process_pending(limit=50):
         for cid in cves:
             a = evaluate(db, cid, watch, techs, triggers[cid])
             if a:
-                out.append({"code": a.code, "cve": cid, "score": a.score, "status": a.status})
+                out.append({"code": a.code, "cve": cid, "score": a.score, "status": a.status, "trigger": triggers[cid]})
         for e in events:
             e.processed = True
         db.commit()

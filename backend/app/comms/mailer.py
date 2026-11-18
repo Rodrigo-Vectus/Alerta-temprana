@@ -73,15 +73,15 @@ def plain_text(content: dict) -> str:
     return "\n".join(lines)
 
 
-def send(content: dict, to: list[str], attachments: list[tuple[str, bytes, str]], subject_prefix: str = ""):
+def send(content: dict, to: list[str], attachments: list[tuple[str, bytes, str]], subject_prefix: str = "", notice: dict | None = None):
     if not is_configured():
         raise RuntimeError("El correo no está configurado: revisá MAIL_PROVIDER y los datos SMTP_* o GRAPH_* en el .env")
     if provider() == "graph":
-        return _send_graph(content, to, attachments, subject_prefix)
-    return _send_smtp(content, to, attachments, subject_prefix)
+        return _send_graph(content, to, attachments, subject_prefix, notice=notice)
+    return _send_smtp(content, to, attachments, subject_prefix, notice=notice)
 
 
-def _graph_payload(content, to, attachments, subject_prefix):
+def _graph_payload(content, to, attachments, subject_prefix, notice=None):
     atts = [{"@odata.type": "#microsoft.graph.fileAttachment", "name": name, "contentType": "image/png",
              "contentBytes": base64.b64encode(data).decode(), "contentId": name, "isInline": True}
             for name, data in inline_images()]
@@ -89,13 +89,13 @@ def _graph_payload(content, to, attachments, subject_prefix):
               "contentBytes": base64.b64encode(data).decode()} for fn, data, mime in attachments]
     return {"message": {
         "subject": f"{subject_prefix}{content['subject']}",
-        "body": {"contentType": "HTML", "content": render_newsletter(content, mode="cid")},
+        "body": {"contentType": "HTML", "content": render_newsletter(content, mode="cid", notice=notice)},
         "toRecipients": [{"emailAddress": {"address": a}} for a in to],
         "attachments": atts,
     }, "saveToSentItems": True}
 
 
-def _send_graph(content, to, attachments, subject_prefix, client=None):
+def _send_graph(content, to, attachments, subject_prefix, client=None, notice=None):
     g = graph_config()
     client = client or httpx.Client(timeout=60)
     tok = client.post(f"https://login.microsoftonline.com/{g['tenant']}/oauth2/v2.0/token", data={
@@ -105,12 +105,12 @@ def _send_graph(content, to, attachments, subject_prefix, client=None):
         raise RuntimeError(f"Microsoft rechazó las credenciales de la app ({tok.status_code}): {tok.text[:300]}")
     r = client.post(f"https://graph.microsoft.com/v1.0/users/{g['sender']}/sendMail",
                     headers={"Authorization": f"Bearer {tok.json()['access_token']}"},
-                    json=_graph_payload(content, to, attachments, subject_prefix))
+                    json=_graph_payload(content, to, attachments, subject_prefix, notice))
     if r.status_code != 202:
         raise RuntimeError(f"Microsoft Graph no aceptó el envío ({r.status_code}): {r.text[:300]}")
 
 
-def _send_smtp(content: dict, to: list[str], attachments: list[tuple[str, bytes, str]], subject_prefix: str = ""):
+def _send_smtp(content: dict, to: list[str], attachments: list[tuple[str, bytes, str]], subject_prefix: str = "", notice=None):
     c = config()
 
     msg = EmailMessage()
@@ -118,8 +118,11 @@ def _send_smtp(content: dict, to: list[str], attachments: list[tuple[str, bytes,
     msg["From"] = formataddr((c["from_name"], c["from_addr"]))
     msg["To"] = ", ".join(to)
     msg["Message-ID"] = make_msgid(domain=c["from_addr"].split("@")[-1] or "vectus.la")
-    msg.set_content(plain_text(content))
-    msg.add_alternative(render_newsletter(content, mode="cid"), subtype="html")
+    text = plain_text(content)
+    if notice:
+        text = f"AVISO INTERNO PARA EL SOC: {notice['text']}\n{notice['url']}\n\n" + text
+    msg.set_content(text)
+    msg.add_alternative(render_newsletter(content, mode="cid", notice=notice), subtype="html")
     html_part = msg.get_payload()[1]
     for name, data in inline_images():
         html_part.add_related(data, maintype="image", subtype="png", cid=f"<{name}>", filename=name, disposition="inline")

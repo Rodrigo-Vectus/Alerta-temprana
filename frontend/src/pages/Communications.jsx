@@ -1,12 +1,15 @@
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { usePageHeader } from '../components/Layout'
-import { Empty, ErrorBox, fmtDateTime, Loading, Score, useFetch } from '../components/ui'
+import { Empty, ErrorBox, fmtDateTime, Loading, Score, timeAgo, useFetch } from '../components/ui'
 
 export const COMM_STATUS = {
-  borrador: { label: 'Borrador', cls: 'b-warn' },
-  aprobado: { label: 'Aprobado', cls: 'b-cyan' },
+  borrador: { label: 'Borrador', cls: 'b-muted' },
+  programado: { label: 'Programado', cls: 'b-warn' },
   enviado: { label: 'Enviado', cls: 'b-ok' },
+  cancelado: { label: 'Cancelado', cls: 'b-muted' },
+  error: { label: 'Error de envío', cls: 'b-danger' },
+  aprobado: { label: 'Borrador', cls: 'b-muted' },
 }
 export const CommBadge = ({ status }) => {
   const s = COMM_STATUS[status] || { label: status, cls: 'b-muted' }
@@ -14,7 +17,7 @@ export const CommBadge = ({ status }) => {
 }
 
 export default function Communications() {
-  usePageHeader('Comunicados', 'Newsletter (cuerpo del mail) + informe adjunto para cada alerta')
+  usePageHeader('Comunicados', 'Se envían automáticamente a todos los contactos de clientes')
   const navigate = useNavigate()
   const { data, error, loading } = useFetch(() => api.get('/communications'), [], { interval: 60000 })
   const mail = useFetch(() => api.get('/communications/mail-status'), [])
@@ -36,15 +39,15 @@ export default function Communications() {
         ) : data && (
           <div className="table-wrap">
             <table className="tbl">
-              <thead><tr><th>Comunicado</th><th>Score</th><th>Alerta</th><th>Título</th><th>Estado</th><th>Envíos</th><th>Actualizado</th></tr></thead>
+              <thead><tr><th>Comunicado</th><th>Score</th><th>Alerta</th><th>Título</th><th>Estado</th><th>Envío</th><th>Actualizado</th></tr></thead>
               <tbody>{data.map((c) => (
                 <tr key={c.code} className="click" onClick={() => navigate(`/comunicados/${c.code}`)}>
                   <td className="code">{c.code}</td>
                   <td><Score value={c.score} /></td>
                   <td><div className="code" style={{ color: 'var(--text)' }}>{c.alert_code}</div><div className="sub mono">{c.cve_id}</div></td>
                   <td style={{ maxWidth: 420 }}><div className="prod">{c.title}</div><div className="sub">{c.vendor} {c.product}</div></td>
-                  <td><CommBadge status={c.status} /></td>
-                  <td className="num">{c.sends || '—'}</td>
+                  <td><CommBadge status={c.status} />{c.auto && <div className="sub mono">automático</div>}</td>
+                  <td className="num">{c.status === 'programado' ? <span style={{ color: 'var(--warn)' }}>{new Date(c.scheduled_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })} hs</span> : c.status === 'enviado' && c.last_send ? timeAgo(c.last_send.fecha) : '—'}</td>
                   <td className="num">{fmtDateTime(c.updated_at)}</td>
                 </tr>
               ))}</tbody>

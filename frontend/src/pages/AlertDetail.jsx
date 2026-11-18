@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
+import { COMM_STATUS } from './Communications'
 import { useAuth } from '../auth'
 import { usePageHeader } from '../components/Layout'
 import { IconArrowLeft, IconExternal, IconFlow, IconMail } from '../components/icons'
@@ -13,8 +14,8 @@ const ACTIONS = {
   candidata: [['en_revision', 'Tomar en revisión', 'btn-primary'], ['monitoreo', 'Pasar a monitoreo', 'btn-secondary'], ['descartada', 'Descartar', 'btn-danger']],
   monitoreo: [['candidata', 'Escalar a candidata', 'btn-primary'], ['descartada', 'Descartar', 'btn-danger']],
   descartada_auto: [['candidata', 'Escalar a candidata', 'btn-primary']],
-  en_revision: [['aprobada', 'Aprobar comunicado', 'btn-success'], ['candidata', 'Devolver a candidata', 'btn-secondary'], ['descartada', 'Descartar', 'btn-danger']],
-  aprobada: [['en_revision', 'Volver a revisión', 'btn-secondary'], ['cerrada', 'Cerrar', 'btn-secondary']],
+  en_revision: [['candidata', 'Devolver a candidata', 'btn-secondary'], ['descartada', 'Descartar', 'btn-danger']],
+  aprobada: [['cerrada', 'Cerrar', 'btn-secondary']],
   enviada: [['cerrada', 'Cerrar', 'btn-success']],
   descartada: [['candidata', 'Reabrir', 'btn-secondary']],
   cerrada: [['en_revision', 'Reabrir', 'btn-secondary']],
@@ -24,6 +25,7 @@ const EVENT_LABEL = {
   nueva_en_kev: 'Nueva en CISA KEV', actualizada_en_kev: 'Actualizada en CISA KEV', recalculo: 'Puntaje recalculado',
   reintento_nvd: 'Datos de NVD completados', cambio_estado: 'Cambio de estado',
   comunicado_generado: 'Comunicado generado', comunicado_regenerado: 'Comunicado regenerado',
+  comunicado_programado: 'Envío automático programado', envio_cancelado: 'Envío cancelado', envio_manual: 'Envío a clientes solicitado',
 }
 
 export default function AlertDetail() {
@@ -156,7 +158,7 @@ export default function AlertDetail() {
             <div className="card-title"><IconMail width={14} />Comunicado al cliente</div>
             {comm.data ? (
               <div className="row">
-                <div><div className="code mono" style={{ color: 'var(--accent-l)', fontWeight: 700 }}>{comm.data.code}</div><div className="hint">Estado: {comm.data.status}</div></div>
+                <div><div className="code mono" style={{ color: 'var(--accent-l)', fontWeight: 700 }}>{comm.data.code}</div><div className="hint">Estado: {COMM_STATUS[comm.data.status]?.label || comm.data.status}</div></div>
                 <span className="spacer" />
                 <Link to={`/comunicados/${comm.data.code}`} className="btn btn-sm btn-primary" style={{ textDecoration: 'none' }}>Abrir</Link>
               </div>

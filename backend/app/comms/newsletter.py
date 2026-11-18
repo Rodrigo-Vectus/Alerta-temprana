@@ -26,6 +26,16 @@ TEMPLATE = """<!DOCTYPE html>
 <tr><td style="height:10px;background:{{ BLUE }};font-size:0;line-height:0;">&nbsp;</td></tr>
 <tr><td align="center" style="padding:28px 12px;">
 <table role="presentation" width="720" cellpadding="0" cellspacing="0" style="width:100%;max-width:720px;font-family:{{ FONT }};color:{{ TEXT }};">
+  {% if notice %}
+  <tr><td style="padding:0 0 22px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff7e6;border:1px solid #f0c36d;border-radius:8px;">
+      <tr><td style="padding:14px 18px;font-size:13.5px;line-height:1.55;color:#7a4b00;">
+        <b>AVISO INTERNO PARA EL SOC · no se reenvía a clientes</b><br>{{ notice.text }}<br>
+        <a href="{{ notice.url }}" style="display:inline-block;margin-top:10px;background:#7a4b00;color:#ffffff;text-decoration:none;font-weight:700;padding:8px 14px;border-radius:6px;">Abrir en la consola para editar o cancelar</a>
+      </td></tr>
+    </table>
+  </td></tr>
+  {% endif %}
 
   <!-- Encabezado -->
   <tr><td>
@@ -137,11 +147,11 @@ def _data_uri(name):
     return "data:image/png;base64," + base64.b64encode((ASSETS / name).read_bytes()).decode()
 
 
-def render_newsletter(content: dict, mode: str = "data") -> str:
+def render_newsletter(content: dict, mode: str = "data", notice: dict | None = None) -> str:
     """mode='data' incrusta las imágenes (vista previa); mode='cid' las referencia como adjuntos inline (mail)."""
     img = {n: (f"cid:{n}" if mode == "cid" else _data_uri(n)) for n in IMAGES}
     cards = [f for f in content.get("fortinet", []) if f.get("included", True)]
-    return _tpl.render(c=content, cards=cards, img=img, emitted=fecha_corta(content.get("emitted")),
+    return _tpl.render(c=content, cards=cards, img=img, notice=notice, emitted=fecha_corta(content.get("emitted")),
                        FONT=FONT, NAVY=NAVY, BLUE=BLUE, LIGHT=LIGHT, RED=RED, TEXT=TEXT, MUTED=MUTED, BORDER=BORDER, BG=BG)
 
 

@@ -7,7 +7,7 @@ from sqlalchemy import text
 
 from app.auth import audit_request, bootstrap_admin, decode_token, write_guard
 from app.db import engine, init_db
-from app.routers import alerts, auth as auth_router, clients, communications, kev, users
+from app.routers import alerts, auth as auth_router, clients, communications, kev, settings as settings_router, users
 
 
 @asynccontextmanager
@@ -17,7 +17,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Vectus SAT - Alerta Temprana", version="0.6.0",
+app = FastAPI(title="Vectus SAT - Alerta Temprana", version="0.7.0",
               docs_url="/api/docs", openapi_url="/api/openapi.json", lifespan=lifespan)
 
 AUDIT_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
@@ -54,6 +54,7 @@ def health():
 guarded = [Depends(write_guard)]
 app.include_router(auth_router.router)
 app.include_router(users.router)
+app.include_router(settings_router.router)
 app.include_router(kev.router, dependencies=guarded)
 app.include_router(alerts.router, dependencies=guarded)
 app.include_router(clients.router, dependencies=guarded)

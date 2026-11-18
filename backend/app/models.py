@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from sqlalchemy import String, Text, Date, DateTime, Integer, Boolean, ForeignKey, func
+from sqlalchemy import String, Text, Date, DateTime, Integer, Boolean, ForeignKey, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -164,12 +164,38 @@ class Communication(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     code: Mapped[str | None] = mapped_column(String(32), unique=True)
     alert_id: Mapped[int] = mapped_column(ForeignKey("alerts.id"), unique=True, index=True)
-    status: Mapped[str] = mapped_column(String(16), default="borrador")     # borrador | aprobado | enviado
+    status: Mapped[str] = mapped_column(String(16), default="borrador")     # borrador | programado | enviado | cancelado | error
     content: Mapped[dict] = mapped_column(JSONB, default=dict)
     created_by: Mapped[str | None] = mapped_column(String(255))
     updated_by: Mapped[str | None] = mapped_column(String(255))
     approved_by: Mapped[str | None] = mapped_column(String(255))
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     sends: Mapped[list] = mapped_column(JSONB, default=list)
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    auto: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ClientContact(Base):
+    """Personas de cada cliente que reciben las alertas por mail."""
+    __tablename__ = "client_contacts"
+    __table_args__ = (UniqueConstraint("client_id", "email", name="uq_contact_client_email"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(255), default="")
+    email: Mapped[str] = mapped_column(String(255))
+    position: Mapped[str | None] = mapped_column(String(128))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Setting(Base):
+    """Configuración editable desde la consola (clave -> valor JSON)."""
+    __tablename__ = "settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSONB, default=dict)
+    updated_by: Mapped[str | None] = mapped_column(String(255))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

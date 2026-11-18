@@ -48,6 +48,7 @@ export const api = {
   get: (p) => request('GET', p),
   post: (p, b = {}) => request('POST', p, b),
   patch: (p, b = {}) => request('PATCH', p, b),
+  put: (p, b = {}) => request('PUT', p, b),
   del: (p) => request('DELETE', p),
   // Respuestas no JSON (HTML, archivos)
   text: async (p, method = 'GET', body) => (await request(method, p, body, true)).text(),
