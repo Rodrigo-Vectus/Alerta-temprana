@@ -215,7 +215,38 @@ CLIENT_SURFACES = ("correo", "navegador")
 NETWORK_DEVICE = r"d-link|tp-link|zyxel|mikrotik|router|camera|cámara|nas|qnap|synology|iot|dvr|nvr"
 
 
-def fortinet_cards(c, kev=None, cve="", short=""):
+def _names(items, n=2):
+    return ", ".join(f"«{x['name']}»" for x in items[:n])
+
+
+def _apply_fortiguard(cards, fg, cve, short):
+    """Reemplaza el texto genérico por la cobertura real que publica FortiGuard para la CVE."""
+    by = {x["key"]: x for x in cards}
+    if fg.get("ips") and "fortigate" in by and by["fortigate"]["product"].startswith("FortiGate"):
+        ids = ", ".join(x["id"] for x in fg["ips"][:2] if x.get("id"))
+        by["fortigate"].update(included=True, _s=9, product="FortiGate (IPS FortiGuard)",
+                               text=f"FortiGuard IPS ya detecta y bloquea los intentos de explotación de {cve} con la firma {_names(fg['ips'])}"
+                                    + (f" (ID {ids})" if ids else "") + f". Verificar que el perfil IPS esté aplicado en las políticas que publican {short}.")
+    elif fg.get("ips") and "fortigate" in by:
+        by["fortigate"]["text"] += f" FortiGuard IPS cuenta además con la firma {_names(fg['ips'])} para este ataque."
+    if fg.get("waf") and "fortiweb" in by:
+        by["fortiweb"].update(included=True, _s=8, text=f"FortiWeb tiene firmas específicas para {cve} ({_names(fg['waf'])}) que bloquean las peticiones maliciosas.")
+    if "fortiedr" in by:
+        parts = []
+        if fg.get("endpoint"):
+            parts.append(f"FortiClient EMS detecta los equipos vulnerables con la firma de vulnerabilidad {_names(fg['endpoint'], 1)}, para priorizar el parcheo")
+        if fg.get("virus"):
+            parts.append(f"el antivirus de FortiGuard (FortiEDR, FortiGate y FortiMail) detecta el malware usado en la campaña, como {_names(fg['virus'])}")
+        if parts:
+            text = "; ".join(parts)
+            by["fortiedr"].update(included=True, _s=7, product="FortiClient EMS / FortiEDR", text=text[0].upper() + text[1:] + ".")
+    if fg.get("dast"):
+        cards.append({"key": "fortidast", "icon": "search", "product": "FortiDAST", "included": True, "_s": 6,
+                      "text": f"Detecta {cve} al escanear las aplicaciones web publicadas, para confirmar si el cliente está expuesto."})
+    return cards
+
+
+def fortinet_cards(c, kev=None, cve="", short="", fg=None):
     """Sección "Cómo te protege Fortinet" adaptada a la vulnerabilidad.
 
     Cada producto de la suite tiene una relevancia según dónde está la falla (perimetral, web, correo,
@@ -328,13 +359,15 @@ def fortinet_cards(c, kev=None, cve="", short=""):
     else:
         add("fortinac", "network", "FortiNAC", "Visibilidad de dispositivos y aislamiento automático de equipos comprometidos.", 0)
 
+    if fg:
+        cards = _apply_fortiguard(cards, fg, cve, short)
     cards.sort(key=lambda x: -x["_s"])
     for x in cards:
         x.pop("_s")
     return cards
 
 
-def build_content(kev, enr, alert) -> dict:
+def build_content(kev, enr, alert, fg: dict | None = None) -> dict:
     c = classify(kev, enr)
     prod = product_display(kev.vendor_project, kev.product)
     short = product_short(kev.vendor_project, kev.product)
@@ -374,6 +407,13 @@ def build_content(kev, enr, alert) -> dict:
         if len(refs) >= 5:
             break
 
+    if fg:
+        if fg.get("outbreak") and fg["outbreak"].get("url"):
+            refs.insert(2, {"label": "FortiGuard Outbreak Alert", "url": fg["outbreak"]["url"]})
+        for x in (fg.get("ips") or [])[:1]:
+            if x.get("url"):
+                refs.insert(2, {"label": f"FortiGuard IPS {x['name']}", "url": x["url"]})
+
     sev_txt = f" con una puntuación CVSS de {cvss}" + (f" (severidad {severity})" if severity else "") if cvss is not None else ""
     exec_summary = (f"El {fecha_larga(kev.date_added)} CISA confirmó la explotación activa de la {kev.cve_id} en {prod}, "
                     f"una falla de {c['desc']}{sev_txt}. {impact} Vectus recomienda aplicar la actualización del fabricante "
@@ -397,10 +437,12 @@ def build_content(kev, enr, alert) -> dict:
         "subtitle": " · ".join(subtitle),
         "what_happened": what,
         "actions": actions,
-        "fortinet_intro": (f"Controles de la suite Fortinet para mitigar {kev.cve_id} mientras se aplica la actualización"
-                           if not kev.vendor_project.lower().startswith("fortinet")
-                           else f"La falla afecta a un producto Fortinet: estos son los pasos y controles para mitigarla"),
-        "fortinet": fortinet_cards(c, kev, kev.cve_id, short),
+        "fortinet_intro": (f"La falla afecta a un producto Fortinet: estos son los pasos y controles para mitigarla"
+                           if kev.vendor_project.lower().startswith("fortinet")
+                           else f"FortiGuard Labs publicó la alerta «{fg['outbreak']['name']}» y la suite Fortinet ya cuenta con protección para {kev.cve_id}"
+                           if fg and fg.get("outbreak")
+                           else f"Controles de la suite Fortinet para mitigar {kev.cve_id} mientras se aplica la actualización"),
+        "fortinet": fortinet_cards(c, kev, kev.cve_id, short, fg),
         "important": f"Las protecciones de red reducen el riesgo, pero no reemplazan la actualización de {short}.",
         "references": refs,
         # --- Informe (adjunto) ---
@@ -422,5 +464,6 @@ def build_content(kev, enr, alert) -> dict:
         "affected_products": _affected_products(enr, prod),
         "hardening": HARDENING_BASE + HARDENING_SURFACE.get(c["surface"], []),
         "next_steps": NEXT_STEPS,
-        "meta": {"surface": c["surface"], "family": c["family"], "alert_code": alert.code, "score": alert.score},
+        "meta": {"surface": c["surface"], "family": c["family"], "alert_code": alert.code, "score": alert.score,
+                 "fortiguard": bool(fg)},
     }

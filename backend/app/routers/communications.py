@@ -10,6 +10,7 @@ from app.auth import WRITE_ROLES, get_current_user
 from app.comms import mailer
 from app.comms.automation import recipients
 from app.comms.content import build_content
+from app.comms.fortiguard import lookup as fortiguard_lookup
 from app.comms.document import build_docx
 from app.comms.newsletter import render_newsletter
 from app.comms.pdf import PdfError, docx_to_pdf
@@ -130,7 +131,7 @@ def create_from_alert(alert_code: str, regenerate: bool = False, user: User = De
         comm = db.scalar(select(Communication).where(Communication.alert_id == alert.id))
         if comm and not regenerate:
             return _full(comm, alert, kev)
-        content = build_content(kev, enr, alert)
+        content = build_content(kev, enr, alert, fortiguard_lookup(alert.cve_id))
         if comm is None:
             comm = Communication(alert_id=alert.id, content=content, created_by=user.email, updated_by=user.email)
             db.add(comm)

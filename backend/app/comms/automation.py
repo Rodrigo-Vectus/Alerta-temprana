@@ -18,6 +18,7 @@ from sqlalchemy import select
 
 from app.comms import mailer
 from app.comms.content import build_content
+from app.comms.fortiguard import lookup as fortiguard_lookup
 from app.comms.document import build_docx
 from app.comms.pdf import PdfError, docx_to_pdf
 from app.db import SessionLocal
@@ -109,7 +110,7 @@ def schedule_for_results(results: list[dict]):
                 continue
             kev, enr = db.get(KevVulnerability, alert.cve_id), db.get(CveEnrichment, alert.cve_id)
             when = now_utc() + timedelta(minutes=int(cfg["delay_minutes"]))
-            comm = Communication(alert_id=alert.id, content=build_content(kev, enr, alert), status="programado",
+            comm = Communication(alert_id=alert.id, content=build_content(kev, enr, alert, fortiguard_lookup(alert.cve_id)), status="programado",
                                  scheduled_at=when, auto=True, created_by="sistema", updated_by="sistema")
             db.add(comm)
             db.flush()
