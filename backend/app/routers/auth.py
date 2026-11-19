@@ -15,8 +15,8 @@ from app.settings import get_settings
 router = APIRouter(prefix="/api/auth", tags=["autenticación"])
 log = logging.getLogger("auth")
 
-GENERIC = ("Si el correo está registrado en la plataforma, te enviamos un código de 6 dígitos. "
-           "Revisá también la carpeta de spam.")
+GENERIC = "Si el correo está registrado en la plataforma, vas a recibir un código de acceso."
+INVALID = "Código incorrecto o vencido"
 
 
 class CodeRequestIn(BaseModel):
@@ -62,7 +62,7 @@ def request_code(body: CodeRequestIn, request: Request, tasks: BackgroundTasks):
                 audit("otp_limite", user=u, request=request, status_code=200)
         else:
             audit("otp_correo_desconocido", request=request, status_code=200, email=email)
-    return {"ok": True, "message": GENERIC, "resend_after": otp.RESEND_SECONDS, "ttl_minutes": otp.CODE_TTL_MIN}
+    return {"ok": True, "message": GENERIC}
 
 
 @router.post("/verify-code")
@@ -70,16 +70,16 @@ def verify_code(body: CodeVerifyIn, request: Request):
     email = validate_email(body.email)
     code = re.sub(r"\D", "", body.code or "")
     if len(code) != 6:
-        raise HTTPException(400, "El código tiene 6 dígitos")
+        raise HTTPException(401, INVALID)
     with SessionLocal() as db:
         u = db.scalar(select(User).where(User.email == email))
         result = otp.verify(db, u, code) if u and u.active else "invalid"
         if result == "too_many":
             audit("otp_bloqueado", user=u, request=request, status_code=401)
-            raise HTTPException(401, "Demasiados intentos con este código. Pedí uno nuevo.")
+            raise HTTPException(401, INVALID)
         if result != "ok":
             audit("login_fallido", user=u, request=request, status_code=401, email=email)
-            raise HTTPException(401, "Código incorrecto o vencido")
+            raise HTTPException(401, INVALID)
         u.last_login_at, u.failed_attempts, u.locked_until = now_utc(), 0, None
         db.commit()
         audit("login_ok", user=u, request=request, status_code=200, metodo="codigo_mail")

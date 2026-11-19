@@ -4,14 +4,14 @@ import { useAuth } from '../auth'
 import { ThemeToggle } from '../components/Layout'
 import { ErrorBox } from '../components/ui'
 
-// Ingreso sin contraseña: 1) correo → 2) código de 6 dígitos que llega por mail.
+// Ingreso sin contraseña: 1) correo → 2) código que llega por mail.
+const RESEND_SECONDS = 60
 export default function Login() {
   const { user, requestCode, verifyCode } = useAuth()
   const navigate = useNavigate()
   const [step, setStep] = useState('email')
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
-  const [info, setInfo] = useState(null)
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
   const [wait, setWait] = useState(0)
@@ -32,7 +32,7 @@ export default function Login() {
     setBusy(true); setError(null)
     try {
       const r = await requestCode(email.trim())
-      setInfo(r); setWait(r.resend_after || 60); setCode(''); setStep('code')
+      setWait(RESEND_SECONDS); setCode(''); setStep('code')
     } catch (err) { setError(err) }
     setBusy(false)
   }
@@ -88,8 +88,7 @@ export default function Login() {
             <div className="otp-notice">
               <div className="otp-notice-icon">✉</div>
               <div>
-                Si <b>{email.trim().toLowerCase()}</b> está registrado en la plataforma, te enviamos un código de 6 dígitos.
-                <span className="dim"> Vence en {info?.ttl_minutes || 10} minutos. Revisá también la carpeta de spam.</span>
+                Si <b>{email.trim().toLowerCase()}</b> está registrado en la plataforma, vas a recibir un código de acceso.
               </div>
             </div>
             <div className="stack" style={{ gap: 16 }}>
@@ -97,7 +96,7 @@ export default function Login() {
                 <label>Código de acceso</label>
                 <input ref={codeRef} className="otp-input" inputMode="numeric" autoComplete="one-time-code" maxLength={7}
                   value={code} onChange={(e) => onCode(e.target.value)} onPaste={(e) => { e.preventDefault(); onCode(e.clipboardData.getData('text')) }}
-                  placeholder="••••••" aria-label="Código de 6 dígitos" />
+                  placeholder="Código" aria-label="Código de acceso" />
               </div>
               <ErrorBox error={error} />
               <button className="btn btn-primary btn-block" disabled={busy || code.length !== 6}>
