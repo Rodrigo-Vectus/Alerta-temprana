@@ -38,6 +38,10 @@ def _now():
     return datetime.now(timezone.utc)
 
 
+class CancelIn(BaseModel):
+    reason: str = ""
+
+
 def _require_write(user: User):
     if user.role not in WRITE_ROLES:
         raise HTTPException(403, "Su rol es de solo lectura")
@@ -195,14 +199,21 @@ def send_now(code: str, user: User = Depends(get_current_user)):
 
 
 @router.post("/{code}/cancel")
-def cancel(code: str, user: User = Depends(get_current_user)):
+def cancel(code: str, body: CancelIn | None = None, user: User = Depends(get_current_user)):
+    """El SOC decide no enviarlo: se cancela el envío y la alerta pasa a «No enviada».
+    El comunicado queda guardado y se puede enviar más adelante si cambia la decisión."""
     _require_write(user)
+    reason = (body.reason if body else "").strip()
     with SessionLocal() as db:
         comm, alert, kev = _load(db, code)
         if comm.status != "programado":
             raise HTTPException(400, "Solo se puede cancelar un comunicado programado")
         comm.status, comm.updated_by = "cancelado", user.email
-        _alert_history(alert, "envio_cancelado", user, comentario=f"{comm.code} cancelado antes del envío")
+        _alert_history(alert, "envio_cancelado", user,
+                       comentario=f"{comm.code} cancelado antes del envío" + (f": {reason}" if reason else ""))
+        if alert.status not in ("enviada", "cerrada"):
+            _alert_history(alert, "cambio_estado", user, de=alert.status, a="no_enviada", comentario=reason)
+            alert.status = "no_enviada"
         db.commit()
         return _full(comm, alert, kev)
 

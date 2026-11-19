@@ -66,6 +66,7 @@ export default function CommunicationEditor() {
   const { user, canWrite, isAdmin } = useAuth()
   const navigate = useNavigate()
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [cancelReason, setCancelReason] = useState(null)
   const toast = useToast()
   const { data, error, loading, setData } = useFetch(() => api.get(`/communications/${code}`), [code])
   const mail = useFetch(() => api.get('/communications/mail-status'), [])
@@ -129,7 +130,7 @@ export default function CommunicationEditor() {
     setConfirmDelete(false)
     navigate(`/alertas/${data.alert_code}`)
   }, 'Comunicado eliminado. Podés generarlo de nuevo desde la alerta.')
-  const cancelSend = () => run('cancel', async () => setData(await api.post(`/communications/${code}/cancel`)), 'Envío automático cancelado')
+  const cancelSend = () => run('cancel', async () => { setData(await api.post(`/communications/${code}/cancel`, { reason: cancelReason || '' })); setCancelReason(null) }, 'Envío cancelado: la alerta quedó en «No enviadas»')
   const regenerate = () => run('regen', async () => { setData(await api.post(`/communications/from-alert/${data.alert_code}?regenerate=true`)); setConfirmRegen(false) }, 'Contenido regenerado desde la plantilla')
   const loadPdf = () => run('pdf', async () => {
     if (dirty) await save()
@@ -168,7 +169,7 @@ export default function CommunicationEditor() {
             {dirty && <button className="btn btn-sm btn-primary" onClick={save} disabled={!!busy}>{busy === 'save' ? 'Guardando…' : 'Guardar cambios'}</button>}
             {data.status === 'programado' && <>
               <button className="btn btn-sm btn-success" onClick={sendNow} disabled={!!busy}>Enviar ahora</button>
-              <button className="btn btn-sm btn-danger" onClick={cancelSend} disabled={!!busy}>Cancelar envío</button>
+              <button className="btn btn-sm btn-danger" onClick={() => setCancelReason('')} disabled={!!busy}>Cancelar envío</button>
             </>}
             {['borrador', 'aprobado', 'cancelado', 'error'].includes(data.status) && <button className="btn btn-sm btn-success" onClick={() => setConfirmSend(true)} disabled={!!busy}>Enviar a clientes</button>}
             {data.status === 'enviado' && rcpt.data?.some((r) => !r.sent) && <button className="btn btn-sm btn-secondary" onClick={() => setConfirmSend(true)} disabled={!!busy}>Enviar a pendientes</button>}
@@ -254,7 +255,13 @@ export default function CommunicationEditor() {
 
           <div className="card" style={{ position: 'sticky', top: 100, padding: 0, overflow: 'hidden' }}>
             <div className="card-title" style={{ padding: '16px 20px 0' }}>Vista previa del mail <span className="spacer" /><span className="mono dim" style={{ fontSize: 10 }}>en vivo</span></div>
-            <iframe title="Vista previa del newsletter" srcDoc={html} sandbox="allow-popups" style={{ width: '100%', height: 'calc(100vh - 200px)', border: 0, background: '#f3f6fb' }} />
+            <div className="mail-head">
+              {mail.data?.from && <div><span>De</span><b>{mail.data.from_name}</b> &lt;{mail.data.from}&gt;</div>}
+              <div><span>Para</span>contactos de cada cliente (un mail por persona)</div>
+              <div><span>Asunto</span><b className="mail-subject">{content.subject || '(sin asunto)'}</b></div>
+              <div><span>Adjunto</span>Informe de impacto (PDF)</div>
+            </div>
+            <iframe title="Vista previa del newsletter" srcDoc={html} sandbox="allow-popups" style={{ width: '100%', height: 'calc(100vh - 330px)', border: 0, background: '#f3f6fb' }} />
           </div>
         </div>
       )}
@@ -379,6 +386,16 @@ export default function CommunicationEditor() {
           </Modal>
         )
       })()}
+
+      {cancelReason !== null && (
+        <Modal title="No enviar este comunicado" desc="Se cancela el envío a los clientes y la alerta pasa a la pestaña «No enviadas». El comunicado queda guardado: si más adelante cambia la decisión, se puede enviar desde acá."
+          onClose={() => setCancelReason(null)}
+          actions={<><button className="btn btn-secondary" onClick={() => setCancelReason(null)}>Volver</button>
+            <button className="btn btn-danger" onClick={cancelSend} disabled={!!busy}>{busy === 'cancel' ? 'Cancelando…' : 'Cancelar envío'}</button></>}>
+          <div className="fg"><label>Motivo (opcional, queda en el historial)</label>
+            <textarea value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} placeholder="Ej.: no aplica a la cartera de clientes, producto sin uso en la región…" autoFocus /></div>
+        </Modal>
+      )}
 
       {confirmDelete && (
         <Modal title={`Eliminar ${data.code}`}

@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -15,14 +15,20 @@ router = APIRouter(prefix="/api/alerts", tags=["alertas"])
 STATUSES = {
     "candidata": "Candidata",
     "monitoreo": "Monitoreo",
-    "descartada_auto": "Descartada (auto)",
+    "descartada_auto": "Sin aviso (puntaje bajo)",
     "en_revision": "En revisión",
     "aprobada": "Aprobada",
     "enviada": "Enviada",
     "descartada": "Descartada",
+    "no_enviada": "No enviada",
     "cerrada": "Cerrada",
 }
 MANUAL_TARGETS = {"candidata", "monitoreo", "en_revision", "descartada", "cerrada"}
+
+# Pestañas de la pantalla Alertas
+NEW_DAYS = 7
+SENT = ("enviada", "cerrada")
+NOT_SENT = ("no_enviada", "descartada")
 
 
 class StatusIn(BaseModel):
@@ -37,6 +43,7 @@ def _alert(a, k, e, full=False):
          "date_added": k.date_added, "due_date": k.due_date,
          "cvss": e.cvss_score if e else None, "epss": e.epss if e else None,
          "clients": sorted({m["client"] for m in (a.matched_clients or [])}),
+         "origin": (a.history or [{}])[0].get("evento"),
          "created_at": a.created_at, "updated_at": a.updated_at}
     if full:
         d.update(description=k.short_description, required_action=k.required_action, notes=k.notes,
@@ -58,18 +65,33 @@ def _base_query():
 
 @router.get("")
 def list_alerts(status: str | None = None, min_score: int = 0, q: str | None = None,
-                limit: int = Query(100, le=1000)):
+                new_days: int | None = None, order: str = "score", limit: int = Query(100, le=1000)):
     with SessionLocal() as db:
         query = _base_query().where(Alert.score >= min_score)
         if status:
             query = query.where(Alert.status.in_(status.split(",")))
+        if new_days:
+            query = query.where(Alert.created_at >= datetime.now(timezone.utc) - timedelta(days=new_days))
         if q:
             like = f"%{q.strip()}%"
             query = query.where(Alert.cve_id.ilike(like) | Alert.code.ilike(like)
                                 | KevVulnerability.vendor_project.ilike(like)
                                 | KevVulnerability.product.ilike(like))
-        query = query.order_by(Alert.score.desc(), Alert.id.desc()).limit(limit)
-        return [_alert(a, k, e) for a, k, e in db.execute(query).all()]
+        if order == "recent":
+            query = query.order_by(Alert.created_at.desc(), Alert.id.desc())
+        else:
+            query = query.order_by(Alert.score.desc(), Alert.id.desc())
+        return [_alert(a, k, e) for a, k, e in db.execute(query.limit(limit)).all()]
+
+
+@router.get("/counts")
+def counts():
+    """Cantidad por pestaña de la pantalla Alertas."""
+    with SessionLocal() as db:
+        n = lambda *w: db.scalar(select(func.count()).select_from(Alert).where(*w))  # noqa: E731
+        return {"nuevas": n(Alert.created_at >= datetime.now(timezone.utc) - timedelta(days=NEW_DAYS)),
+                "enviadas": n(Alert.status.in_(SENT)), "no_enviadas": n(Alert.status.in_(NOT_SENT)),
+                "todas": n(), "new_days": NEW_DAYS}
 
 
 @router.get("/statuses")

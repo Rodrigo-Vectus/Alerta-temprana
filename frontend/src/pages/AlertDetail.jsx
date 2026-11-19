@@ -18,6 +18,7 @@ const ACTIONS = {
   aprobada: [['cerrada', 'Cerrar', 'btn-secondary']],
   enviada: [['cerrada', 'Cerrar', 'btn-success']],
   descartada: [['candidata', 'Reabrir', 'btn-secondary']],
+  no_enviada: [['en_revision', 'Reabrir', 'btn-secondary']],
   cerrada: [['en_revision', 'Reabrir', 'btn-secondary']],
 }
 

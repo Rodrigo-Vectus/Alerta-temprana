@@ -26,8 +26,9 @@ export const STATUS = {
   aprobada: { label: 'Aprobada', cls: 'b-cyan' },
   enviada: { label: 'Enviada', cls: 'b-ok' },
   monitoreo: { label: 'Monitoreo', cls: 'b-info' },
-  descartada_auto: { label: 'Descartada (auto)', cls: 'b-muted' },
+  descartada_auto: { label: 'Sin aviso', cls: 'b-muted' },
   descartada: { label: 'Descartada', cls: 'b-muted' },
+  no_enviada: { label: 'No enviada', cls: 'b-muted' },
   cerrada: { label: 'Cerrada', cls: 'b-ok' },
 }
 

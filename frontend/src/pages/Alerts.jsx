@@ -6,15 +6,27 @@ import { usePageHeader } from '../components/Layout'
 import { IconRefresh, IconSearch } from '../components/icons'
 import { Empty, ErrorBox, fmtDate, fmtPct, Loading, Score, StatusBadge, useFetch, useToast } from '../components/ui'
 
+// Pestañas: lo nuevo, lo que salió a clientes, lo que el SOC decidió no enviar y el histórico completo
 const FILTERS = [
-  { key: 'activas', label: 'Activas', status: 'candidata,en_revision,aprobada' },
-  { key: 'candidata', label: 'Candidatas', status: 'candidata' },
-  { key: 'en_revision', label: 'En revisión', status: 'en_revision' },
-  { key: 'monitoreo', label: 'Monitoreo', status: 'monitoreo' },
-  { key: 'enviada', label: 'Enviadas', status: 'enviada,cerrada' },
-  { key: 'descartadas', label: 'Descartadas', status: 'descartada,descartada_auto' },
-  { key: 'todas', label: 'Todas', status: '' },
+  { key: 'nuevas', label: 'Nuevas', count: 'nuevas', order: 'recent', newDays: true,
+    hint: (d) => `Ingresadas a la plataforma en los últimos ${d} días, de la más reciente a la más antigua.` },
+  { key: 'enviadas', label: 'Enviadas', count: 'enviadas', status: 'enviada,cerrada', order: 'recent',
+    hint: () => 'Alertas cuyo comunicado ya se envió a los clientes.' },
+  { key: 'no_enviadas', label: 'No enviadas', count: 'no_enviadas', status: 'no_enviada,descartada', order: 'recent',
+    hint: () => 'El SOC canceló el envío o descartó la alerta. El motivo queda en el historial de cada una; se pueden enviar más adelante desde su comunicado.' },
+  { key: 'todas', label: 'Todas', count: 'todas',
+    hint: () => 'Todas las vulnerabilidades evaluadas, ordenadas por puntaje.' },
 ]
+
+function Detected({ a }) {
+  const d = new Date(a.created_at)
+  return (
+    <>
+      <div className="num">{d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>
+      <div className="sub mono">{a.origin === 'carga_inicial' ? 'carga inicial' : d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }) + ' hs'}</div>
+    </>
+  )
+}
 
 export default function Alerts() {
   usePageHeader('Alertas', 'Evaluación automática de CVE nuevas o actualizadas en CISA KEV')
@@ -29,9 +41,13 @@ export default function Alerts() {
 
   useEffect(() => { const t = setTimeout(() => setQDebounced(q), 300); return () => clearTimeout(t) }, [q])
 
+  const counts = useFetch(() => api.get('/alerts/counts'), [], { interval: 60000 })
+  const newDays = counts.data?.new_days || 7
   const { data, error, loading, reload } = useFetch(() => {
     const p = new URLSearchParams({ limit: '500' })
     if (filter.status) p.set('status', filter.status)
+    if (filter.newDays) p.set('new_days', String(newDays))
+    if (filter.order) p.set('order', filter.order)
     if (qDebounced.trim()) p.set('q', qDebounced.trim())
     return api.get(`/alerts?${p}`)
   }, [filter.key, qDebounced], { interval: 60000 })
@@ -41,7 +57,7 @@ export default function Alerts() {
     try {
       const r = await api.post('/alerts/rescore-all')
       toast(`Puntajes recalculados: ${r.changed} de ${r.total} cambiaron`)
-      reload()
+      reload(); counts.reload(true)
     } catch (e) { toast(e.message, 'err') }
     setBusy(false)
   }
@@ -51,7 +67,9 @@ export default function Alerts() {
       <div className="toolbar">
         <div className="chips">
           {FILTERS.map((f) => (
-            <button key={f.key} className={`chip ${f.key === filter.key ? 'on' : ''}`} onClick={() => setParams({ f: f.key })}>{f.label}</button>
+            <button key={f.key} className={`chip ${f.key === filter.key ? 'on' : ''}`} onClick={() => setParams({ f: f.key })}>
+              {f.label}{counts.data && <span className="chip-n">{counts.data[f.count]}</span>}
+            </button>
           ))}
         </div>
         <span className="spacer" />
@@ -59,27 +77,29 @@ export default function Alerts() {
         {canWrite && <button className="btn btn-secondary" onClick={rescore} disabled={busy} title="Recalcular con el inventario y fabricantes actuales"><IconRefresh />{busy ? 'Recalculando…' : 'Recalcular'}</button>}
       </div>
 
+      <p className="hint" style={{ margin: '-6px 0 14px' }}>{filter.hint(newDays)}</p>
       <div className="card" style={{ padding: '6px 22px' }}>
         {error && <div style={{ padding: 16 }}><ErrorBox error={error} /></div>}
-        {loading && !data ? <Loading /> : data?.length === 0 ? <Empty>No hay alertas con este filtro.</Empty> : data && (
+        {loading && !data ? <Loading /> : data?.length === 0 ? <Empty>{filter.key === 'nuevas' ? `No ingresaron alertas en los últimos ${newDays} días. El sistema sigue consultando CISA cada 15 minutos.` : 'No hay alertas en esta pestaña.'}</Empty> : data && (
           <div className="table-wrap">
             <table className="tbl">
               <thead>
-                <tr><th>Score</th><th>Alerta</th><th>Fabricante / producto</th><th>CVSS</th><th>EPSS</th><th>Ransomware</th><th>Clientes</th><th>Agregada KEV</th><th>Vence CISA</th><th>Estado</th></tr>
+                <tr><th>Score</th><th>Alerta</th><th>Fabricante / producto</th><th>CVSS</th><th>EPSS</th><th title="Usada en campañas de ransomware">Ransom.</th><th>Clientes</th><th>Detectada</th><th>Agregada KEV</th><th>Vence CISA</th><th>Estado</th></tr>
               </thead>
               <tbody>
                 {data.map((a) => (
                   <tr key={a.code} className="click" onClick={() => navigate(`/alertas/${a.code}`)}>
                     <td><Score value={a.score} /></td>
-                    <td><div className="code">{a.code}</div><div className="sub mono">{a.cve_id}</div></td>
-                    <td style={{ maxWidth: 360 }}><div className="prod">{a.vendor} {a.product}</div><div className="sub" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.name}</div></td>
+                    <td style={{ whiteSpace: 'nowrap' }}><div className="code">{a.code}</div><div className="sub mono">{a.cve_id}</div></td>
+                    <td style={{ maxWidth: 300 }}><div className="prod">{a.vendor} {a.product}</div><div className="sub" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.name}</div></td>
                     <td className="num">{a.cvss ?? '—'}</td>
                     <td className="num">{fmtPct(a.epss)}</td>
                     <td>{a.ransomware === 'Known' ? <span className="badge b-danger">Sí</span> : <span className="dim mono" style={{ fontSize: 11 }}>—</span>}</td>
                     <td>{a.clients.length ? <span className="badge b-danger" title={a.clients.join(', ')}>{a.clients.length}</span> : <span className="dim">—</span>}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}><Detected a={a} /></td>
                     <td className="num">{fmtDate(a.date_added)}</td>
                     <td className="num">{fmtDate(a.due_date)}</td>
-                    <td><StatusBadge status={a.status} /></td>
+                    <td style={{ whiteSpace: 'nowrap' }}><StatusBadge status={a.status} /></td>
                   </tr>
                 ))}
               </tbody>
