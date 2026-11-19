@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import { usePageHeader } from '../components/Layout'
-import { ErrorBox, Loading, useFetch, useToast } from '../components/ui'
+import { EmailChips, ErrorBox, Loading, useFetch, useToast } from '../components/ui'
 
 export default function Settings() {
   usePageHeader('Configuración', 'Envío automático de alertas a clientes')
@@ -14,7 +14,7 @@ export default function Settings() {
   const [form, setForm] = useState(null)
   const [busy, setBusy] = useState(false)
 
-  useEffect(() => { if (data) setForm({ ...data, soc_text: (data.soc_emails || []).join(', ') }) }, [data])
+  useEffect(() => { if (data) setForm({ ...data }) }, [data])
   if (loading && !data) return <Loading />
   if (error) return <ErrorBox error={error} />
   if (!form) return <Loading />
@@ -25,7 +25,7 @@ export default function Settings() {
     try {
       const r = await api.put('/settings', {
         auto_send: form.auto_send, delay_minutes: Number(form.delay_minutes), min_score: Number(form.min_score),
-        soc_emails: form.soc_text.split(/[,;\s]+/).filter(Boolean), attach_docx: form.attach_docx, public_url: form.public_url,
+        soc_emails: form.soc_emails, attach_docx: form.attach_docx, public_url: form.public_url,
       })
       setData(r); toast('Configuración guardada')
     } catch (e) { toast(e.message, 'err') }
@@ -65,8 +65,9 @@ export default function Settings() {
             <input type="number" min={0} max={100} value={form.min_score} disabled={!isAdmin} onChange={(e) => set('min_score')(e.target.value)} />
           </div>
           <div className="fg full">
-            <label>Emails del SOC (reciben el aviso previo)</label>
-            <input value={form.soc_text} disabled={!isAdmin} onChange={(e) => set('soc_text')(e.target.value)} placeholder="soc@vectus.la, rgonzalez@vectus.la" />
+            <label>Emails del SOC (reciben el aviso previo) · {form.soc_emails.length}</label>
+            <EmailChips value={form.soc_emails} onChange={set('soc_emails')} disabled={!isAdmin} />
+            <p className="hint">Escribí un email y tocá Agregar o Enter. Podés pegar varios separados por coma. Acordate de tocar Guardar.</p>
           </div>
           <div className="fg full">
             <label>Dirección de la consola (para el link del aviso)</label>

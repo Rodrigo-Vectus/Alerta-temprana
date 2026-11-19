@@ -11,7 +11,8 @@ const EMPTY_CONTACT = { name: '', email: '', position: '' }
 
 export default function Clients() {
   usePageHeader('Clientes', 'Contactos que reciben las alertas automáticas')
-  const { canWrite } = useAuth()
+  const { canWrite, isAdmin } = useAuth()
+  const [confirmDel, setConfirmDel] = useState(false)
   const toast = useToast()
   const { data, error, loading, reload } = useFetch(() => api.get('/clients'), [])
   const summary = useFetch(() => api.get('/clients/recipients'), [data])
@@ -60,6 +61,10 @@ export default function Clients() {
   const delContact = (x) => run(() => api.del(`/clients/${sel.id}/contacts/${x.id}`), 'Contacto eliminado')
   const delTech = (t) => run(() => api.del(`/clients/${sel.id}/technologies/${t.id}`), 'Tecnología eliminada').then((ok) => ok && setDirty(true))
   const toggleActive = () => run(() => api.patch(`/clients/${sel.id}`, { active: !sel.active }), sel.active ? 'Cliente desactivado' : 'Cliente activado').then((ok) => ok && setDirty(true))
+  const removeClient = async () => {
+    const ok = await run(() => api.del(`/clients/${sel.id}`), `Cliente ${sel.name} eliminado`)
+    if (ok) { setConfirmDel(false); setSelId(null) }
+  }
   const rescore = async () => {
     try { const r = await api.post('/alerts/rescore-all'); toast(`Puntajes recalculados: ${r.changed} de ${r.total} cambiaron`); setDirty(false) } catch (e) { toast(e.message, 'err') }
   }
@@ -120,6 +125,7 @@ export default function Clients() {
                   <button className="btn btn-sm btn-secondary" onClick={() => setEditClient({ ...sel })}>Editar</button>
                   <button className="btn btn-sm btn-secondary" onClick={toggleActive}>{sel.active ? 'Desactivar' : 'Activar'}</button>
                 </>}
+                {isAdmin && <button className="btn btn-sm btn-danger" onClick={() => setConfirmDel(true)} title="Solo administradores"><IconTrash />Eliminar</button>}
               </div>
             </div>
 
@@ -206,6 +212,13 @@ export default function Clients() {
         ) : <div className="card"><Empty>Seleccioná o creá un cliente.</Empty></div>}
       </div>
 
+      {confirmDel && sel && (
+        <Modal title={`Eliminar ${sel.name}`}
+          desc={`Se borra el cliente con sus ${sel.contacts.length} contacto(s) y ${sel.technologies.length} tecnología(s). Deja de recibir alertas de inmediato. Los comunicados que ya se le enviaron quedan registrados. Esta acción no se puede deshacer.`}
+          onClose={() => setConfirmDel(false)}
+          actions={<><button className="btn btn-secondary" onClick={() => setConfirmDel(false)}>Cancelar</button>
+            <button className="btn btn-danger" onClick={removeClient}>Eliminar definitivamente</button></>} />
+      )}
       {newClient && <ClientModal title="Nuevo cliente" value={newClient} onChange={setNewClient} onClose={() => setNewClient(null)} onSave={createClient} />}
       {editClient && <ClientModal title="Editar cliente" value={editClient} onChange={setEditClient} onClose={() => setEditClient(null)} onSave={saveClient} />}
     </>

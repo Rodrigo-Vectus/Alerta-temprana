@@ -1,10 +1,11 @@
 import re
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
+from app.auth import require_role
 from app.db import SessionLocal
 from app.models import Client, ClientContact, ClientTechnology, KevVulnerability, WatchVendor
 
@@ -182,8 +183,9 @@ def delete_technology(client_id: int, tech_id: int):
         db.commit()
 
 
-@router.delete("/clients/{client_id}", status_code=204)
+@router.delete("/clients/{client_id}", status_code=204, dependencies=[Depends(require_role("admin"))])
 def delete_client(client_id: int):
+    """Solo administradores. Borra el cliente con sus contactos y tecnologías; los comunicados ya enviados no se modifican."""
     with SessionLocal() as db:
         c = db.get(Client, client_id)
         if not c:

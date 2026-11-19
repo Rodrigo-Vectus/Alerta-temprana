@@ -4,7 +4,7 @@ import { api, download } from '../api'
 import { useAuth } from '../auth'
 import { usePageHeader } from '../components/Layout'
 import { IconArrowLeft, IconMail, IconPlus, IconRefresh, IconTrash } from '../components/icons'
-import { ErrorBox, fmtDateTime, Loading, Modal, Score, StatusBadge, useFetch, useToast } from '../components/ui'
+import { AutoTextarea, ErrorBox, fmtDateTime, Loading, Modal, Score, StatusBadge, useFetch, useToast } from '../components/ui'
 import { CommBadge } from './Communications'
 
 // ---------- Editores reutilizables ----------
@@ -13,7 +13,7 @@ function Field({ label, value, onChange, area = false, rows = 3, disabled }) {
     <div className="fg full">
       <label>{label}</label>
       {area
-        ? <textarea rows={rows} value={value || ''} onChange={(e) => onChange(e.target.value)} disabled={disabled} />
+        ? <AutoTextarea minRows={rows} value={value || ''} onChange={(e) => onChange(e.target.value)} disabled={disabled} />
         : <input value={value || ''} onChange={(e) => onChange(e.target.value)} disabled={disabled} />}
     </div>
   )
@@ -28,7 +28,7 @@ function ListEditor({ label, items, onChange, disabled, numbered = false, rows =
         {items.map((it, i) => (
           <div key={i} className="row" style={{ alignItems: 'flex-start' }}>
             {numbered && <span className="badge b-info" style={{ marginTop: 10 }}>{String(i + 1).padStart(2, '0')}</span>}
-            <textarea rows={rows} value={it} onChange={(e) => set(i, e.target.value)} disabled={disabled} style={{ minHeight: 0 }} />
+            <AutoTextarea minRows={rows} value={it} onChange={(e) => set(i, e.target.value)} disabled={disabled} />
             {!disabled && <button className="icon-btn" title="Quitar" onClick={() => onChange(items.filter((_, j) => j !== i))} style={{ marginTop: 6 }}><IconTrash /></button>}
           </div>
         ))}
@@ -47,7 +47,7 @@ function ObjListEditor({ label, items, onChange, fields, disabled, addLabel = 'A
         {items.map((it, i) => (
           <div key={i} className="row" style={{ alignItems: 'flex-start' }}>
             {fields.map((f) => (f.area
-              ? <textarea key={f.k} rows={2} value={it[f.k] || ''} placeholder={f.ph} onChange={(e) => set(i, f.k, e.target.value)} disabled={disabled} style={{ flex: f.flex || 1, minHeight: 0 }} />
+              ? <AutoTextarea key={f.k} minRows={2} value={it[f.k] || ''} placeholder={f.ph} onChange={(e) => set(i, f.k, e.target.value)} disabled={disabled} style={{ flex: f.flex || 1 }} />
               : <input key={f.k} value={it[f.k] || ''} placeholder={f.ph} onChange={(e) => set(i, f.k, e.target.value)} disabled={disabled} style={{ flex: f.flex || 1 }} />))}
             {!disabled && <button className="icon-btn" title="Quitar" onClick={() => onChange(items.filter((_, j) => j !== i))} style={{ marginTop: 6 }}><IconTrash /></button>}
           </div>
@@ -237,7 +237,7 @@ export default function CommunicationEditor() {
                       onChange={(e) => set('fortinet')(content.fortinet.map((x, j) => (j === i ? { ...x, included: e.target.checked } : x)))} />
                     <div className="stack" style={{ gap: 6, flex: 1 }}>
                       <input value={f.product} disabled={locked} onChange={(e) => set('fortinet')(content.fortinet.map((x, j) => (j === i ? { ...x, product: e.target.value } : x)))} style={{ fontWeight: 700 }} />
-                      <textarea rows={2} value={f.text} disabled={locked} onChange={(e) => set('fortinet')(content.fortinet.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} style={{ minHeight: 0 }} />
+                      <AutoTextarea minRows={2} value={f.text} disabled={locked} onChange={(e) => set('fortinet')(content.fortinet.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} />
                     </div>
                   </div>
                 ))}

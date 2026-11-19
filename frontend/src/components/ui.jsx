@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 // ---------- Formato ----------
@@ -114,3 +114,50 @@ export function ToastProvider({ children }) {
   )
 }
 export const useToast = () => useContext(ToastCtx)
+
+// ---------- Textarea que se agranda según el contenido ----------
+export function AutoTextarea({ value, minRows = 2, style, ...props }) {
+  const ref = useRef(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight + 2}px`
+  }, [value])
+  return <textarea ref={ref} rows={minRows} value={value} {...props} style={{ minHeight: 0, overflow: 'hidden', resize: 'none', ...style }} />
+}
+
+// ---------- Lista de emails como etiquetas ----------
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+export function EmailChips({ value, onChange, disabled, placeholder = 'nombre@vectus.la' }) {
+  const [text, setText] = useState('')
+  const [err, setErr] = useState('')
+  const add = () => {
+    const parts = text.split(/[,;\s]+/).map((x) => x.trim().toLowerCase()).filter(Boolean)
+    if (!parts.length) return
+    const bad = parts.filter((x) => !EMAIL_RE.test(x))
+    if (bad.length) { setErr(`Email inválido: ${bad.join(', ')}`); return }
+    onChange([...new Set([...value, ...parts])])
+    setText(''); setErr('')
+  }
+  return (
+    <div className="stack" style={{ gap: 10 }}>
+      <div className="chips">
+        {value.length === 0 && <span className="hint">Sin destinatarios: nadie del SOC recibe el aviso previo.</span>}
+        {value.map((e) => (
+          <span key={e} className="chip" style={{ cursor: 'default' }}>{e}
+            {!disabled && <span className="x" title="Quitar" onClick={() => onChange(value.filter((x) => x !== e))}>×</span>}
+          </span>
+        ))}
+      </div>
+      {!disabled && (
+        <div className="row">
+          <input value={text} placeholder={placeholder} onChange={(e) => { setText(e.target.value); setErr('') }}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); add() } }} />
+          <button type="button" className="btn btn-secondary" onClick={add} disabled={!text.trim()}>Agregar</button>
+        </div>
+      )}
+      {err && <div className="alert-box err">{err}</div>}
+    </div>
+  )
+}
