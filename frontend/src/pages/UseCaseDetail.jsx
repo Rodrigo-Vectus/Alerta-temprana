@@ -79,11 +79,25 @@ function AttackFlow({ attack, uc }) {
 
 function CodeBlock({ b }) {
   const toast = useToast()
-  const copy = () => { try { navigator.clipboard.writeText(b.code); toast('Copiado al portapapeles') } catch { toast('No se pudo copiar', 'err') } }
+  const variants = b.variants || [{ tool: b.lang, lang: b.lang, code: b.code }]
+  const [i, setI] = useState(0)
+  const v = variants[Math.min(i, variants.length - 1)]
+  const copy = () => { try { navigator.clipboard.writeText(v.code); toast(`Copiado: ${v.tool}`) } catch { toast('No se pudo copiar', 'err') } }
   return (
     <div className="rb-code">
-      <div className="rb-bar"><span>{b.title}</span><span className="spacer" /><span className="lang">{b.lang}</span><button className="btn btn-sm btn-secondary" onClick={copy}>Copiar</button></div>
-      <pre>{b.code}</pre>
+      <div className="rb-bar">
+        <span>{b.title}</span>
+        <span className="spacer" />
+        <span className="lang">{v.lang}</span>
+        <button className="btn btn-sm btn-secondary" onClick={copy}>Copiar</button>
+      </div>
+      {variants.length > 1 && (
+        <div className="rb-tools">
+          {variants.map((x, j) => <button key={x.tool} className={`rb-tool ${j === i ? 'on' : ''}`} onClick={() => setI(j)}>{x.tool}</button>)}
+        </div>
+      )}
+      <pre>{v.code}</pre>
+      {b.note && <div className="rb-note">{b.note}</div>}
     </div>
   )
 }

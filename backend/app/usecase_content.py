@@ -203,85 +203,148 @@ def _sla(x, score):
 
 
 VERSION_CMDS = {
-    "web": ("bash", "# Identificar servicios web y versión expuesta\nnmap -sV -p 80,443,8080,8443 <rango_o_host>\ncurl -sI https://<host> | grep -iE 'server|x-powered-by'"),
-    "perimetral": ("text", "FortiGate (FortiOS):   get system status\nCisco ASA / IOS:       show version\nPalo Alto (PAN-OS):    show system info\nCheck Point (Gaia):    show version all   |   fw ver\nOtros: consultar la versión desde la consola de administración del equipo."),
-    "correo": ("powershell", "# Versión de Microsoft 365 Apps / Office (Click-to-Run) en cada equipo\nGet-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Office\\ClickToRun\\Configuration' |\n  Select-Object VersionToReport, CDNBaseUrl"),
-    "navegador": ("powershell", "# Versión de Chrome y Edge instalada\n(Get-Item 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe').VersionInfo.ProductVersion\n(Get-Item 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe').VersionInfo.ProductVersion"),
-    "virtualizacion": ("bash", "# En cada host ESXi (SSH)\nvmware -vl\nesxcli system version get"),
-    "so": ("powershell", "# Windows: últimos parches instalados\nGet-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 10\n# Linux (bash):  uname -r ; dpkg -l | grep <paquete>   o   rpm -q <paquete>"),
-    "general": ("text", "Consultar la versión instalada desde la consola del producto o el inventario del escáner de vulnerabilidades,\ny compararla con la tabla de versiones afectadas del aviso del fabricante."),
+    "web": ("Bash", "bash", "# Identificar servicios web y versión expuesta\nnmap -sV -p 80,443,8080,8443 <rango_o_host>\ncurl -sI https://<host> | grep -iE 'server|x-powered-by'"),
+    "perimetral": ("Consola del equipo", "text", "FortiGate (FortiOS):   get system status\nCisco ASA / IOS:       show version\nPalo Alto (PAN-OS):    show system info\nCheck Point (Gaia):    show version all   |   fw ver\nSonicWall (SonicOS):   show version"),
+    "correo": ("PowerShell", "powershell", "# Versión de Microsoft 365 Apps / Office (Click-to-Run) en cada equipo\nGet-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Office\\ClickToRun\\Configuration' |\n  Select-Object VersionToReport, CDNBaseUrl"),
+    "navegador": ("PowerShell", "powershell", "# Versión de Chrome y Edge instalada\n(Get-Item 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe').VersionInfo.ProductVersion\n(Get-Item 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe').VersionInfo.ProductVersion"),
+    "virtualizacion": ("ESXi (SSH)", "bash", "vmware -vl\nesxcli system version get"),
+    "so": ("Windows / Linux", "powershell", "# Windows: últimos parches instalados\nGet-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 10\n# Linux:  uname -r ; dpkg -l | grep <paquete>   o   rpm -q <paquete>"),
+    "general": ("Procedimiento", "text", "Consultar la versión instalada desde la consola del producto o el inventario del escáner de vulnerabilidades,\ny compararla con la tabla de versiones afectadas del aviso del fabricante."),
 }
+
+PRIV_NETS_SPL = 'NOT (dest_ip="10.0.0.0/8" OR dest_ip="172.16.0.0/12" OR dest_ip="192.168.0.0/16")'
+
+
+def _g(title, variants, note=None):
+    """Bloque de consulta con variantes por herramienta: [(herramienta, lenguaje, código)]."""
+    return {"title": title, "note": note, "variants": [{"tool": t, "lang": l, "code": c} for t, l, c in variants]}
+
+
+def _version_block(x):
+    cve = x["cve"]
+    tool, lang, code = VERSION_CMDS.get(x["surface"], VERSION_CMDS["general"])
+    return _g("Verificar versión instalada y exposición", [
+        (tool, lang, code),
+        ("Wazuh (Vulnerability Detection)", "dql", f'vulnerability.id:"{cve}"\n# Wazuh 4.8+: Vulnerability Detection > Inventory (índice wazuh-states-vulnerabilities-*)\n# Muestra agente, paquete y versión afectados.'),
+        ("Defender Vulnerability Management (KQL)", "kql", f'DeviceTvmSoftwareVulnerabilities\n| where CveId == "{cve}"\n| project DeviceName, OSPlatform, SoftwareVendor, SoftwareName, SoftwareVersion, RecommendedSecurityUpdate'),
+        ("Tenable / Nessus / Qualys", "text", f"Buscar {cve} en los resultados del último escaneo (plugins / QIDs asociados a la CVE)\ny filtrar por activos con exposición a internet."),
+        ("Nmap", "bash", "nmap -sV -Pn <rango_o_host>\n# Para servicios web: nmap -sV -p 80,443,8080,8443 --script http-headers <host>"),
+    ])
 
 
 def _hunting(x):
     cve, sig = x["cve"], (x["ips"][0] if x["ips"] else None)
-    q = []
-    ips_filter_spl = f'(cve="{cve}"' + (f' OR attack="{sig}"' if sig else "") + ")"
-    ips_filter_kql = f'Message has "{cve}"' + (f' or Activity has "{sig}"' if sig else "")
-    q.append({"title": "Intentos de explotación registrados por IPS / WAF (30 días)", "items": [
-        ("Splunk (SPL)", "spl", f'index=* sourcetype IN ("fortigate*","pan*","cisco*","*waf*") {ips_filter_spl} earliest=-30d\n| stats count min(_time) as primero max(_time) as ultimo by src_ip, dest_ip, action\n| sort - count'),
-        ("Microsoft Sentinel (KQL)", "kql", f'CommonSecurityLog\n| where TimeGenerated > ago(30d)\n| where {ips_filter_kql}\n| summarize intentos=count(), primero=min(TimeGenerated), ultimo=max(TimeGenerated)\n    by SourceIP, DestinationIP, DeviceAction\n| order by intentos desc'),
-    ] + ([("FortiAnalyzer (filtro de Log View → IPS)", "text", f"attack={sig}")] if sig else [])})
+    term = f'"{cve}"' + (f' OR "{sig}"' if sig else "")
+    groups = []
+    groups.append(_g("Intentos de explotación registrados por IPS / WAF (30 días)", [
+        ("Splunk", "spl", f'index=* sourcetype IN ("fortigate*","pan*","cisco*","*waf*") (cve="{cve}"' + (f' OR attack="{sig}"' if sig else "") + ') earliest=-30d\n| stats count min(_time) as primero max(_time) as ultimo by src_ip, dest_ip, action\n| sort - count'),
+        ("Microsoft Sentinel", "kql", f'CommonSecurityLog\n| where TimeGenerated > ago(30d)\n| where Message has "{cve}"' + (f' or Activity has "{sig}"' if sig else "") + '\n| summarize intentos=count(), primero=min(TimeGenerated), ultimo=max(TimeGenerated)\n    by SourceIP, DestinationIP, DeviceAction\n| order by intentos desc'),
+        ("Wazuh", "dql", f'data.cve:"{cve}"' + (f' or data.attack:"{sig}"' if sig else "") + '\n# Discover > índice wazuh-alerts-* > últimos 30 días\n# Columnas sugeridas: data.srcip, data.dstip, data.action, rule.description'),
+        ("FortiSIEM", "text", f"Analytics > Search (últimos 30 días)\n  Condición:  Raw Event Log  CONTAIN  {cve}" + (f"\n         OR  Attack Name  =  {sig}" if sig else "") + "\n  Agrupar por: Source IP, Destination IP, Action"),
+        ("Elastic / OpenSearch", "kql", f'{" or ".join(chr(34)+t+chr(34) for t in [cve] + ([sig] if sig else []))}\n# Discover, rango 30 días. Con la integración Fortinet/Palo Alto también: vulnerability.id:"{cve}"'),
+        ("IBM QRadar (AQL)", "sql", f"SELECT sourceip, destinationip, QIDNAME(qid) AS evento, COUNT(*) AS intentos\nFROM events\nWHERE UTF8(payload) ILIKE '%{cve}%'" + (f" OR UTF8(payload) ILIKE '%{sig}%'" if sig else "") + "\nGROUP BY sourceip, destinationip, qid\nORDER BY intentos DESC\nLAST 30 DAYS"),
+    ] + ([("FortiAnalyzer", "text", f"Log View > Security > Intrusion Prevention\n  Filtro: attack={sig}\n  Rango: últimos 30 días")] if sig else []) + [
+        ("FortiGate (CLI)", "text", "execute log filter category 4\n" + (f"execute log filter field attack {sig}\n" if sig else f"execute log filter field ref {cve}\n") + "execute log display\n# category 4 = utm-ips. Para logs en disco: execute log filter device disk"),
+        ("Palo Alto (Threat log)", "text", f"Monitor > Logs > Threat\n  ( name-of-threatid contains '{sig or cve}' )"),
+        ("Check Point (SmartView / Logs)", "text", f'blade:"IPS" AND "{cve}"' + (f' OR "{sig}"' if sig else "")),
+    ], note="Si el IPS/WAF de la herramienta no etiqueta la CVE, buscar por el nombre de la firma del fabricante."))
 
     s, fam = x["surface"], x["family"]
+    parents = '("w3wp.exe","php-cgi.exe","php.exe","httpd.exe","java.exe","tomcat9.exe","node.exe")'
+    children = '("cmd.exe","powershell.exe","pwsh.exe","certutil.exe","bitsadmin.exe","whoami.exe","net.exe")'
     if fam in ("rce", "mem", "web") and s in ("web", "general", "virtualizacion", "perimetral"):
-        q.append({"title": "Procesos sospechosos lanzados por el servicio (post-explotación)", "items": [
-            ("Microsoft Defender / Sentinel (KQL)", "kql", 'DeviceProcessEvents\n| where Timestamp > ago(30d)\n| where InitiatingProcessFileName in~ ("w3wp.exe","php-cgi.exe","php.exe","httpd.exe","java.exe","tomcat9.exe","node.exe")\n| where FileName in~ ("cmd.exe","powershell.exe","pwsh.exe","certutil.exe","bitsadmin.exe","whoami.exe","net.exe")\n| project Timestamp, DeviceName, InitiatingProcessFileName, FileName, ProcessCommandLine'),
-            ("Sysmon / Windows (Splunk)", "spl", 'index=* (EventCode=1 OR EventCode=4688) (ParentImage="*\\\\w3wp.exe" OR ParentImage="*\\\\php-cgi.exe" OR ParentImage="*\\\\httpd.exe" OR ParentImage="*\\\\java.exe")\n  (Image="*\\\\cmd.exe" OR Image="*\\\\powershell.exe" OR Image="*\\\\certutil.exe")\n| table _time host ParentImage Image CommandLine'),
-        ]})
+        groups.append(_g("Procesos sospechosos lanzados por el servicio (post-explotación)", [
+            ("Microsoft Defender", "kql", f'DeviceProcessEvents\n| where Timestamp > ago(30d)\n| where InitiatingProcessFileName in~ {parents}\n| where FileName in~ {children}\n| project Timestamp, DeviceName, InitiatingProcessFileName, FileName, ProcessCommandLine'),
+            ("Microsoft Sentinel (4688)", "kql", 'SecurityEvent\n| where TimeGenerated > ago(30d) and EventID == 4688\n| where ParentProcessName has_any ("w3wp.exe","php-cgi.exe","httpd.exe","java.exe")\n| where NewProcessName has_any ("cmd.exe","powershell.exe","certutil.exe")\n| project TimeGenerated, Computer, ParentProcessName, NewProcessName, CommandLine'),
+            ("Splunk (Sysmon / 4688)", "spl", 'index=* (EventCode=1 OR EventCode=4688) (ParentImage="*\\\\w3wp.exe" OR ParentImage="*\\\\php-cgi.exe" OR ParentImage="*\\\\httpd.exe" OR ParentImage="*\\\\java.exe")\n  (Image="*\\\\cmd.exe" OR Image="*\\\\powershell.exe" OR Image="*\\\\certutil.exe")\n| table _time host ParentImage Image CommandLine'),
+            ("Wazuh (Sysmon)", "dql", 'data.win.system.eventID:1 and data.win.eventdata.parentImage:(*w3wp.exe or *php-cgi.exe or *httpd.exe or *java.exe)\n  and data.win.eventdata.image:(*cmd.exe or *powershell.exe or *certutil.exe)'),
+            ("Elastic (ECS)", "kql", 'process.parent.name:("w3wp.exe" or "php-cgi.exe" or "httpd.exe" or "java.exe")\n  and process.name:("cmd.exe" or "powershell.exe" or "certutil.exe")'),
+            ("Linux (servidor)", "bash", "# Procesos hijos del servidor web\nps -eo pid,ppid,user,cmd --forest | grep -A3 -E 'httpd|apache2|nginx|php-fpm|java' \n# Conexiones salientes establecidas por el usuario del servicio\nss -tpn state established | grep -E 'www-data|apache|nginx'"),
+        ]))
     if s == "web":
-        q.append({"title": "Web shells y archivos modificados", "items": [
+        groups.append(_g("Web shells y archivos modificados", [
             ("Linux", "bash", "find /var/www /usr/share/nginx /srv -type f \\( -name '*.php' -o -name '*.jsp' -o -name '*.aspx' \\) -mtime -30 -ls\ngrep -rlE 'eval\\(|base64_decode\\(|system\\(|shell_exec\\(|passthru\\(' /var/www 2>/dev/null"),
-            ("Windows (IIS/Apache)", "powershell", "Get-ChildItem C:\\inetpub, C:\\xampp\\htdocs -Recurse -Include *.php,*.aspx,*.jsp -ErrorAction SilentlyContinue |\n  Where-Object LastWriteTime -gt (Get-Date).AddDays(-30) |\n  Select-Object FullName, LastWriteTime"),
+            ("Windows (IIS / XAMPP)", "powershell", "Get-ChildItem C:\\inetpub, C:\\xampp\\htdocs -Recurse -Include *.php,*.aspx,*.jsp -ErrorAction SilentlyContinue |\n  Where-Object LastWriteTime -gt (Get-Date).AddDays(-30) |\n  Select-Object FullName, LastWriteTime"),
             ("Logs de acceso (Linux)", "bash", "grep -iE '(%[0-9a-f]{2}){4,}|cmd=|/bin/(ba)?sh|powershell|allow_url_include|auto_prepend_file' /var/log/{nginx,apache2,httpd}/access*.log"),
-        ]})
+            ("Wazuh (FIM)", "dql", 'rule.groups:"syscheck" and syscheck.path:(*.php or *.jsp or *.aspx) and syscheck.event:("added" or "modified")'),
+            ("Microsoft Defender", "kql", 'DeviceFileEvents\n| where Timestamp > ago(30d)\n| where ActionType in ("FileCreated","FileModified")\n| where FileName endswith ".php" or FileName endswith ".aspx" or FileName endswith ".jsp"\n| where InitiatingProcessFileName in~ ("w3wp.exe","php-cgi.exe","httpd.exe","java.exe")\n| project Timestamp, DeviceName, FolderPath, FileName, InitiatingProcessFileName'),
+        ]))
     if fam == "creds" or s == "correo":
-        q.append({"title": "Filtración de hashes NTLM y uso de credenciales", "items": [
-            ("Conexiones SMB salientes a internet (KQL)", "kql", 'DeviceNetworkEvents\n| where Timestamp > ago(30d)\n| where RemotePort in (445, 139) and RemoteIPType == "Public"\n| summarize conexiones=count() by DeviceName, InitiatingProcessFileName, RemoteIP\n| order by conexiones desc'),
-            ("Firewall (Splunk)", "spl", 'index=* dest_port IN (445,139) NOT (dest_ip="10.0.0.0/8" OR dest_ip="172.16.0.0/12" OR dest_ip="192.168.0.0/16") earliest=-30d\n| stats count by src_ip, dest_ip, action'),
-            ("Inicios de sesión NTLM inusuales (Windows 4624)", "kql", 'SecurityEvent\n| where TimeGenerated > ago(30d) and EventID == 4624\n| where AuthenticationPackageName == "NTLM" and LogonType in (3, 10)\n| summarize logins=count(), origenes=make_set(IpAddress, 20) by TargetUserName\n| where array_length(origenes) > 3'),
-        ]})
+        groups.append(_g("Conexiones SMB salientes hacia internet (filtración de hashes NTLM)", [
+            ("Microsoft Defender", "kql", 'DeviceNetworkEvents\n| where Timestamp > ago(30d)\n| where RemotePort in (445, 139) and RemoteIPType == "Public"\n| summarize conexiones=count() by DeviceName, InitiatingProcessFileName, RemoteIP\n| order by conexiones desc'),
+            ("Splunk (firewall)", "spl", f'index=* dest_port IN (445,139) {PRIV_NETS_SPL} earliest=-30d\n| stats count by src_ip, dest_ip, action'),
+            ("Wazuh", "dql", 'data.dstport:(445 or 139)\n# Discover > wazuh-alerts-* > 30 días. Excluir del resultado los destinos privados\n# (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16): lo que queda es tráfico SMB hacia internet.'),
+            ("Elastic (ECS)", "kql", 'destination.port:(445 or 139) and not destination.ip:("10.0.0.0/8" or "172.16.0.0/12" or "192.168.0.0/16")'),
+            ("IBM QRadar (AQL)", "sql", "SELECT sourceip, destinationip, COUNT(*) AS conexiones FROM flows\nWHERE destinationport IN (445,139)\n  AND NOT (INCIDR('10.0.0.0/8',destinationip) OR INCIDR('172.16.0.0/12',destinationip) OR INCIDR('192.168.0.0/16',destinationip))\nGROUP BY sourceip, destinationip LAST 30 DAYS"),
+            ("FortiAnalyzer", "text", "Log View > Traffic\n  Filtro: dstport=445 and dstintfrole=wan\n  Rango: últimos 30 días"),
+        ]))
+        groups.append(_g("Inicios de sesión NTLM inusuales (evento 4624)", [
+            ("Microsoft Sentinel", "kql", 'SecurityEvent\n| where TimeGenerated > ago(30d) and EventID == 4624\n| where AuthenticationPackageName == "NTLM" and LogonType in (3, 10)\n| summarize logins=count(), origenes=make_set(IpAddress, 20) by TargetUserName\n| where array_length(origenes) > 3'),
+            ("Splunk", "spl", 'index=* EventCode=4624 Authentication_Package=NTLM Logon_Type IN (3,10) earliest=-30d\n| stats dc(src_ip) as origenes values(src_ip) as ips by user\n| where origenes > 3'),
+            ("Wazuh", "dql", 'data.win.system.eventID:4624 and data.win.eventdata.authenticationPackageName:"NTLM" and data.win.eventdata.logonType:(3 or 10)'),
+            ("Elastic (ECS)", "kql", 'event.code:4624 and winlog.event_data.AuthenticationPackageName:"NTLM" and winlog.event_data.LogonType:(3 or 10)'),
+        ]))
     if fam in ("auth", "priv") or s == "perimetral":
-        q.append({"title": "Cuentas y privilegios", "items": [
-            ("Windows: cuentas creadas y agregadas a grupos privilegiados", "kql", 'SecurityEvent\n| where TimeGenerated > ago(30d)\n| where EventID in (4720, 4728, 4732, 4756, 4672)\n| project TimeGenerated, Computer, EventID, Account, TargetUserName, SubjectUserName'),
-            ("Linux: escalamiento y accesos", "bash", "last -a | head -50\ngrep -E 'sudo|su\\[|useradd|usermod' /var/log/auth.log* /var/log/secure* 2>/dev/null | tail -100\nfind / -xdev -perm -4000 -newermt \"$(date -d '-30 days' +%F)\" 2>/dev/null"),
-        ]})
+        groups.append(_g("Cuentas creadas y agregadas a grupos privilegiados", [
+            ("Microsoft Sentinel", "kql", 'SecurityEvent\n| where TimeGenerated > ago(30d)\n| where EventID in (4720, 4728, 4732, 4756, 4672)\n| project TimeGenerated, Computer, EventID, Account, TargetUserName, SubjectUserName'),
+            ("Splunk", "spl", 'index=* EventCode IN (4720,4728,4732,4756) earliest=-30d\n| table _time host EventCode user src_user Group_Name'),
+            ("Wazuh", "dql", 'data.win.system.eventID:(4720 or 4728 or 4732 or 4756)'),
+            ("Elastic (ECS)", "kql", 'event.code:(4720 or 4728 or 4732 or 4756)'),
+            ("Linux", "bash", "last -a | head -50\ngrep -E 'sudo|su\\[|useradd|usermod' /var/log/auth.log* /var/log/secure* 2>/dev/null | tail -100\nfind / -xdev -perm -4000 -newermt \"$(date -d '-30 days' +%F)\" 2>/dev/null"),
+            ("FortiGate (CLI)", "text", "# Administradores configurados y sesiones administrativas recientes\nshow system admin\nexecute log filter category 1\nexecute log filter field logdesc \"Admin login successful\"\nexecute log display"),
+        ]))
     if s == "navegador":
-        q.append({"title": "Procesos lanzados por el navegador", "items": [
-            ("Microsoft Defender / Sentinel (KQL)", "kql", 'DeviceProcessEvents\n| where Timestamp > ago(30d)\n| where InitiatingProcessFileName in~ ("chrome.exe","msedge.exe","firefox.exe")\n| where FileName in~ ("cmd.exe","powershell.exe","pwsh.exe","wscript.exe","mshta.exe","rundll32.exe")\n| project Timestamp, DeviceName, InitiatingProcessFileName, FileName, ProcessCommandLine'),
-        ]})
+        groups.append(_g("Procesos lanzados por el navegador", [
+            ("Microsoft Defender", "kql", 'DeviceProcessEvents\n| where Timestamp > ago(30d)\n| where InitiatingProcessFileName in~ ("chrome.exe","msedge.exe","firefox.exe")\n| where FileName in~ ("cmd.exe","powershell.exe","pwsh.exe","wscript.exe","mshta.exe","rundll32.exe")\n| project Timestamp, DeviceName, InitiatingProcessFileName, FileName, ProcessCommandLine'),
+            ("Wazuh (Sysmon)", "dql", 'data.win.system.eventID:1 and data.win.eventdata.parentImage:(*chrome.exe or *msedge.exe or *firefox.exe)\n  and data.win.eventdata.image:(*cmd.exe or *powershell.exe or *mshta.exe or *rundll32.exe)'),
+            ("Elastic (ECS)", "kql", 'process.parent.name:("chrome.exe" or "msedge.exe" or "firefox.exe") and process.name:("cmd.exe" or "powershell.exe" or "mshta.exe" or "rundll32.exe")'),
+        ]))
     if s == "virtualizacion":
-        q.append({"title": "Actividad en la plataforma de virtualización", "items": [
+        groups.append(_g("Actividad en la plataforma de virtualización", [
             ("ESXi (SSH)", "bash", "esxcli system account list\ngrep -iE 'login|password|account' /var/log/hostd.log /var/log/auth.log | tail -100\ntail -200 /var/log/shell.log"),
-        ]})
+            ("Splunk", "spl", 'index=* sourcetype IN ("vmw-syslog","vmware:esxlog*") ("Accepted password" OR "useradd" OR "esxcli system account")  earliest=-30d\n| table _time host _raw'),
+        ]))
     if s == "so":
-        q.append({"title": "Persistencia en Windows", "items": [
-            ("Servicios y tareas programadas nuevas (KQL)", "kql", 'SecurityEvent\n| where TimeGenerated > ago(30d)\n| where EventID in (4697, 4698)\n| project TimeGenerated, Computer, EventID, Account, EventData'),
-            ("En el equipo (PowerShell)", "powershell", "Get-WinEvent -FilterHashtable @{LogName='System'; Id=7045; StartTime=(Get-Date).AddDays(-30)} |\n  Select-Object TimeCreated, Message\nGet-ScheduledTask | Where-Object Date -gt (Get-Date).AddDays(-30)"),
-        ]})
-    return q
+        groups.append(_g("Persistencia en Windows (servicios y tareas nuevas)", [
+            ("Microsoft Sentinel", "kql", 'SecurityEvent\n| where TimeGenerated > ago(30d)\n| where EventID in (4697, 4698)\n| project TimeGenerated, Computer, EventID, Account, EventData'),
+            ("Wazuh", "dql", 'data.win.system.eventID:(7045 or 4697 or 4698)'),
+            ("PowerShell (en el equipo)", "powershell", "Get-WinEvent -FilterHashtable @{LogName='System'; Id=7045; StartTime=(Get-Date).AddDays(-30)} |\n  Select-Object TimeCreated, Message\nGet-ScheduledTask | Where-Object Date -gt (Get-Date).AddDays(-30)"),
+        ]))
+    return groups
 
 
 def _containment(x):
-    s, fam, short = x["surface"], x["family"], x["short"]
-    out = [{"title": "Bloquear IPs atacantes identificadas en el hunting", "items": [
-        ("FortiGate (FortiOS CLI)", "text", 'config firewall address\n    edit "IOC-' + x["cve"] + '-01"\n        set subnet <IP_ATACANTE> 255.255.255.255\n    next\nend\n# Agregar el objeto a un grupo usado en una política de bloqueo (deny) de entrada y salida'),
-        ("Linux (iptables)", "bash", "iptables -I INPUT -s <IP_ATACANTE> -j DROP\niptables -I OUTPUT -d <IP_ATACANTE> -j DROP"),
-        ("Windows Firewall", "powershell", 'New-NetFirewallRule -DisplayName "IOC ' + x["cve"] + '" -Direction Inbound -RemoteAddress <IP_ATACANTE> -Action Block\nNew-NetFirewallRule -DisplayName "IOC ' + x["cve"] + ' (salida)" -Direction Outbound -RemoteAddress <IP_ATACANTE> -Action Block'),
-    ]}]
+    s, fam, short, cve = x["surface"], x["family"], x["short"], x["cve"]
+    obj = f"IOC-{cve}-01"
+    out = [_g("Bloquear IPs atacantes identificadas en el hunting", [
+        ("FortiGate", "text", f'config firewall address\n    edit "{obj}"\n        set subnet <IP_ATACANTE> 255.255.255.255\n    next\nend\nconfig firewall addrgrp\n    edit "IOC-Bloqueo"\n        append member "{obj}"\n    next\nend\n# El grupo IOC-Bloqueo debe estar en una política deny de entrada y de salida, arriba de todo'),
+        ("Palo Alto (PAN-OS CLI)", "text", f"configure\nset address {obj} ip-netmask <IP_ATACANTE>/32\nset address-group IOC-Bloqueo static {obj}\ncommit\n# IOC-Bloqueo referenciado en una regla de seguridad deny ubicada arriba"),
+        ("Cisco ASA", "text", f"object network {obj}\n host <IP_ATACANTE>\naccess-list OUTSIDE_IN line 1 extended deny ip object {obj} any\naccess-list INSIDE_OUT line 1 extended deny ip any object {obj}\nwrite memory"),
+        ("Check Point (mgmt_cli)", "bash", f'mgmt_cli login -r true > id.txt\nmgmt_cli add host name "{obj}" ip-address "<IP_ATACANTE>" -s id.txt\nmgmt_cli set group name "IOC-Bloqueo" members.add "{obj}" -s id.txt\nmgmt_cli publish -s id.txt\nmgmt_cli logout -s id.txt\n# Luego instalar la política (SmartConsole o mgmt_cli install-policy)'),
+        ("Linux (iptables / nftables)", "bash", "iptables -I INPUT  -s <IP_ATACANTE> -j DROP\niptables -I OUTPUT -d <IP_ATACANTE> -j DROP\n# nftables:\nnft add rule inet filter input  ip saddr <IP_ATACANTE> drop\nnft add rule inet filter output ip daddr <IP_ATACANTE> drop"),
+        ("Windows Firewall", "powershell", f'New-NetFirewallRule -DisplayName "IOC {cve}" -Direction Inbound -RemoteAddress <IP_ATACANTE> -Action Block\nNew-NetFirewallRule -DisplayName "IOC {cve} (salida)" -Direction Outbound -RemoteAddress <IP_ATACANTE> -Action Block'),
+    ], note="Validar la sintaxis según la versión de cada equipo y documentar cada regla temporal en el caso.")]
     if s == "correo" or fam == "creds":
-        out.append({"title": "Bloquear la filtración de hashes NTLM", "items": [
-            ("Windows Firewall (por GPO o en cada equipo)", "powershell", 'New-NetFirewallRule -DisplayName "Bloquear SMB saliente a internet" -Direction Outbound `\n  -Protocol TCP -RemotePort 445 -RemoteAddress Internet -Action Block'),
-            ("GPO", "text", "Configuración del equipo > Directivas > Configuración de Windows > Configuración de seguridad > Directivas locales >\nOpciones de seguridad > Seguridad de red: restringir NTLM: tráfico NTLM saliente hacia servidores remotos = Auditar (luego Denegar)"),
-            ("Firewall perimetral", "text", "Política de salida que deniegue TCP 445/139 y WebDAV (80/443 hacia destinos no categorizados) desde las redes de usuarios hacia internet."),
-        ]})
+        out.append(_g("Bloquear SMB saliente hacia internet (filtración de hashes NTLM)", [
+            ("FortiGate", "text", 'config firewall policy\n    edit 0\n        set name "Bloquear-SMB-salida"\n        set srcintf "<INTERFAZ_LAN>"\n        set dstintf "<INTERFAZ_WAN>"\n        set srcaddr "all"\n        set dstaddr "all"\n        set service "SMB"\n        set schedule "always"\n        set action deny\n        set logtraffic all\n    next\nend\n# Mover la política por encima de las de salida a internet (move <id> before <id>)'),
+            ("Palo Alto (PAN-OS CLI)", "text", "configure\nset rulebase security rules Bloquear-SMB-salida from trust to untrust source any destination any application ms-ds-smb service application-default action deny\nmove rulebase security rules Bloquear-SMB-salida top\ncommit"),
+            ("Windows Firewall", "powershell", 'New-NetFirewallRule -DisplayName "Bloquear SMB saliente a internet" -Direction Outbound `\n  -Protocol TCP -RemotePort 445 -RemoteAddress Internet -Action Block'),
+            ("GPO", "text", "Configuración del equipo > Directivas > Configuración de Windows > Configuración de seguridad > Directivas locales >\nOpciones de seguridad > Seguridad de red: restringir NTLM: tráfico NTLM saliente hacia servidores remotos\n  = Auditar todo  (validar impacto)  →  luego Denegar todo"),
+        ]))
     if s in ("web", "perimetral"):
-        out.append({"title": f"Reducir la exposición de {short}", "items": [
-            ("Firewall / WAF", "text", f"1. Restringir el acceso a {short} desde internet solo a los orígenes necesarios.\n2. Publicarlo detrás de un WAF con reglas de parcheo virtual para {x['cve']}.\n3. Deshabilitar la interfaz de administración desde internet."),
-        ]})
-    out.append({"title": "Aislamiento de equipos comprometidos", "items": [
+        out.append(_g(f"Reducir la exposición de {short}", [
+            ("Procedimiento", "text", f"1. Restringir el acceso a {short} desde internet solo a los orígenes necesarios.\n2. Publicarlo detrás de un WAF con reglas de parcheo virtual para {cve}.\n3. Deshabilitar la interfaz de administración desde internet."),
+            ("FortiGate (administración)", "text", 'config system admin\n    edit "<ADMIN>"\n        set trusthost1 <IP_RED_GESTION> <MASCARA>\n    next\nend\n# Repetir para cada administrador; quitar "https/ssh" de allowaccess en la interfaz WAN si no se usa'),
+            ("FortiWeb / WAF", "text", f"Verificar que la firma o regla para {cve} esté habilitada en la política de la aplicación,\nen modo bloqueo (Alert & Deny), y revisar los eventos de ataque de los últimos 30 días."),
+            ("Nginx (bloqueo temporal por IP)", "text", "location / {\n    allow <IP_CONFIANZA>;\n    deny  all;\n}\n# nginx -t && systemctl reload nginx"),
+        ]))
+    out.append(_g("Aislamiento de equipos comprometidos", [
         ("Procedimiento", "text", "1. Aislar el equipo desde el EDR (o mover a VLAN de cuarentena desde el NAC/switch).\n2. NO apagarlo: preservar memoria y conexiones activas.\n3. Registrar hora, responsable y motivo del aislamiento en el caso."),
-    ]})
+        ("Microsoft Defender", "text", "Portal Defender > Dispositivos > <equipo> > Aislar dispositivo (aislamiento completo)\nAPI: POST https://api.securitycenter.microsoft.com/api/machines/{id}/isolate  {\"IsolationType\":\"Full\"}"),
+        ("FortiEDR", "text", "Consola FortiEDR > Inventory > seleccionar el equipo > Isolate"),
+        ("CrowdStrike Falcon", "text", "Host management > seleccionar el host > Network contain"),
+        ("FortiNAC / switch", "text", "Mover el puerto o el host a la VLAN de cuarentena, o aplicar la acción de aislamiento definida en FortiNAC."),
+    ]))
     return out
 
 
@@ -319,18 +382,18 @@ def runbook(kev, enr, fg, alert, refs=None):
             "Clasificar: (a) no afectado, (b) afectado sin indicios, (c) afectado con indicios de explotación → incidente.",
             "Registrar la clasificación en «Seguimiento por cliente».",
         ]},
-        {"type": "code", "title": "Verificar versión instalada", "lang": VERSION_CMDS.get(x["surface"], VERSION_CMDS["general"])[0],
-         "code": VERSION_CMDS.get(x["surface"], VERSION_CMDS["general"])[1]},
+        {"type": "code", **_version_block(x)},
     ]})
 
     hunt = _hunting(x)
     secs.append({"id": "hunting", "title": "2. Detección y hunting", "blocks":
                  [{"type": "text", "text": "Ajustar índices, nombres de tablas y rangos de IP al SIEM y la red de cada cliente. Buscar al menos 30 días hacia atrás."}]
-                 + [{"type": "code", "title": f"{g['title']} · {t}", "lang": lang, "code": code} for g in hunt for t, lang, code in g["items"]]})
+                 + [{"type": "code", **g} for g in hunt]})
 
     cont = _containment(x)
     secs.append({"id": "contencion", "title": "3. Contención", "blocks":
-                 [{"type": "code", "title": f"{g['title']} · {t}", "lang": lang, "code": code} for g in cont for t, lang, code in g["items"]]})
+                 [{"type": "text", "text": "Elegí la herramienta del cliente en cada bloque. Validar la sintaxis según la versión del equipo antes de aplicar."}]
+                 + [{"type": "code", **g} for g in cont]})
 
     erad = [f"Aplicar la versión corregida publicada por {x['vendor']} (ver referencias) en todos los activos afectados.",
             "Si había indicios de compromiso: reinstalar desde una imagen limpia en lugar de solo parchear.",
@@ -394,7 +457,11 @@ def runbook_markdown(code, title, sections):
                 out += ["| " + " | ".join(head) + " |", "|" + "---|" * len(head)]
                 out += ["| " + " | ".join(str(c) for c in r) + " |" for r in b["rows"]] + [""]
             elif b["type"] == "code":
-                out += [f"**{b['title']}**", f"```{b['lang']}", b["code"], "```", ""]
+                out.append(f"### {b['title']}")
+                if b.get("note"):
+                    out.append(f"_{b['note']}_")
+                for v in b["variants"]:
+                    out += [f"**{v['tool']}**", f"```{v['lang']}", v["code"], "```", ""]
             elif b["type"] == "links":
                 out += [f"- [{r['label']}]({r['url']})" for r in b["items"]] + [""]
     return "\n".join(out)
