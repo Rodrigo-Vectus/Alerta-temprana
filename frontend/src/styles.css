@@ -315,3 +315,38 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px;}
 .progress{height:8px;border-radius:8px;background:var(--border);overflow:hidden;}
 .progress>span{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--cyan));border-radius:8px;transition:width .3s;}
 .sel-sm{padding:6px 8px !important;font-size:12px !important;}
+
+/* ---------- Flujo del ataque ---------- */
+.atk{max-width:900px;margin:0 auto;}
+.atk-facts{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;}
+.atk-fact{border:1px solid var(--border-b);border-radius:10px;padding:10px 12px;background:var(--surface);}
+.atk-fact .k{font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;}
+.atk-fact .v{font-size:13px;font-weight:700;color:var(--bright);margin-top:4px;}
+.atk-stage{display:grid;grid-template-columns:minmax(0,1.5fr) 34px minmax(0,1fr);align-items:stretch;}
+.atk-card{border:1px solid var(--border-b);border-left:4px solid var(--danger);border-radius:10px;padding:12px 16px;background:var(--surface);}
+.atk-card .tac{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--danger);text-transform:uppercase;letter-spacing:.08em;display:flex;gap:8px;}
+.atk-card .tac .mitre{color:var(--dim);}
+.atk-card .t{font-weight:800;color:var(--bright);font-size:14px;margin-top:4px;}
+.atk-card .d{font-size:12.5px;color:var(--text);line-height:1.55;margin-top:4px;}
+.atk-link{display:flex;align-items:center;justify-content:center;color:var(--ok);font-size:16px;}
+.atk-cut{border:1px dashed rgba(34,166,94,.5);border-radius:10px;padding:10px 14px;font-size:12px;line-height:1.5;color:var(--text);background:var(--ok-bg);}
+.atk-cut b{display:block;font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--ok);letter-spacing:.08em;margin-bottom:3px;}
+.atk-down{text-align:center;color:var(--danger);padding:4px 0;grid-column:1;}
+.pb-step .hint2{font-size:11.5px;color:var(--accent-l);margin-top:3px;}
+
+/* ---------- Runbook ---------- */
+.rb-sec{margin-bottom:26px;}
+.rb-sec h4{font-family:'Syne',sans-serif;text-transform:none;letter-spacing:0;font-size:15px;font-weight:800;color:var(--bright);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border-b);}
+.rb-code{border:1px solid var(--border-b);border-radius:10px;overflow:hidden;margin-bottom:12px;}
+.rb-code .rb-bar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--card-hover);font-size:12px;font-weight:700;color:var(--bright);}
+.rb-code .rb-bar .lang{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);text-transform:uppercase;}
+.rb-code pre{margin:0;padding:12px 14px;background:#0d0f17;color:#d6dcf5;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.6;overflow-x:auto;white-space:pre;}
+[data-theme="light"] .rb-code pre{background:#f6f8fc;color:#1f2a44;}
+.rb-table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:12px;}
+.rb-table td,.rb-table th{border:1px solid var(--border-b);padding:7px 10px;text-align:left;vertical-align:top;}
+.rb-table th{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);text-transform:uppercase;background:var(--card-hover);}
+.rb-table td:first-child{font-weight:600;color:var(--bright);width:34%;}
+.rb-list{padding-left:20px;font-size:13px;line-height:1.7;margin-bottom:12px;}
+.rb-list.rb-check{list-style:none;padding-left:4px;}
+.rb-list.rb-check li::before{content:'☐ ';color:var(--accent-l);}
+@media (max-width:900px){.atk-stage{grid-template-columns:1fr;}.atk-link{display:none;}.atk-facts{grid-template-columns:1fr 1fr;}}

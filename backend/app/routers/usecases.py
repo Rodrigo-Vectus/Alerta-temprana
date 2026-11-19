@@ -1,12 +1,14 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from app.auth import WRITE_ROLES, get_current_user
 from app.db import SessionLocal
-from app.models import Alert, Communication, KevVulnerability, UseCase, UseCaseClient, User
+from app.models import Alert, Communication, CveEnrichment, KevVulnerability, UseCase, UseCaseClient, User
+from app.usecase_content import attack_flow, playbook as build_playbook, runbook, runbook_markdown
 from app.usecases import ensure_use_case, flow, now_iso, progress, sync_clients
 
 router = APIRouter(prefix="/api/usecases", tags=["casos de uso"])
@@ -61,10 +63,23 @@ def _summary(db, uc, alert, kev):
             "created_at": uc.created_at, "updated_at": uc.updated_at, "closed_at": uc.closed_at}
 
 
-def _full(db, uc, alert, kev):
+def _fg(db, alert):
     comm = db.scalar(select(Communication).where(Communication.alert_id == alert.id))
+    return comm, ((comm.content or {}).get("fortiguard") if comm else None)
+
+
+def _refs(comm, kev):
+    if comm and (comm.content or {}).get("references"):
+        return comm.content["references"]
+    return [{"label": "NVD", "url": f"https://nvd.nist.gov/vuln/detail/{kev.cve_id}"},
+            {"label": "CISA KEV", "url": "https://www.cisa.gov/known-exploited-vulnerabilities-catalog"}]
+
+
+def _full(db, uc, alert, kev):
+    comm, fg = _fg(db, alert)
+    enr = db.get(CveEnrichment, alert.cve_id)
     d = _summary(db, uc, alert, kev)
-    d.update(flow=flow(db, uc, alert), playbook=uc.playbook, client_rows=_clients(db, uc), history=uc.history,
+    d.update(flow=flow(db, uc, alert), attack=attack_flow(kev, enr, fg), runbook=runbook(kev, enr, fg, alert, _refs(comm, kev)), playbook=uc.playbook, client_rows=_clients(db, uc), history=uc.history,
              closure_notes=uc.closure_notes, closed_by=uc.closed_by, created_by=uc.created_by,
              communication={"code": comm.code, "status": comm.status} if comm else None,
              alert_name=((comm.content or {}).get("title") if comm else None) or kev.vulnerability_name)
@@ -186,5 +201,39 @@ def reopen(code: str, user: User = Depends(get_current_user)):
         uc, a, k = _load(db, code)
         uc.status, uc.closed_by, uc.closed_at = "abierto", None, None
         _log(uc, "caso_reabierto", user)
+        if a.status == "cerrada":
+            a.history = list(a.history or []) + [{"fecha": now_iso(), "evento": "cambio_estado", "de": "cerrada", "a": "en_revision",
+                                                  "usuario": user.email, "score": a.score, "comentario": f"{uc.code} reabierto"}]
+            a.status = "en_revision"
+        db.commit()
+        return _full(db, uc, a, k)
+
+
+@router.get("/{code}/runbook.md")
+def runbook_md(code: str):
+    with SessionLocal() as db:
+        uc, a, k = _load(db, code)
+        comm, fg = _fg(db, a)
+        md = runbook_markdown(uc.code, f"{k.vendor_project} {k.product} · {a.cve_id}",
+                              runbook(k, db.get(CveEnrichment, a.cve_id), fg, a, _refs(comm, k)))
+        return Response(md, media_type="text/markdown; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="Runbook {uc.code} {a.cve_id}.md"'})
+
+
+@router.post("/{code}/rebuild-playbook")
+def rebuild_playbook(code: str, user: User = Depends(get_current_user)):
+    """Vuelve a armar el playbook con la plantilla actual, conservando los pasos ya tildados."""
+    _w(user)
+    with SessionLocal() as db:
+        uc, a, k = _load(db, code)
+        _, fg = _fg(db, a)
+        done = {s["id"]: s for sec in (uc.playbook or []) for s in sec["steps"] if s.get("done")}
+        pb = build_playbook(k, db.get(CveEnrichment, a.cve_id), fg)
+        for sec in pb:
+            for s in sec["steps"]:
+                if s["id"] in done:
+                    s.update(done=True, done_by=done[s["id"]]["done_by"], done_at=done[s["id"]]["done_at"])
+        uc.playbook = pb
+        _log(uc, "playbook_actualizado", user)
         db.commit()
         return _full(db, uc, a, k)

@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { api } from '../api'
+import { api, download } from '../api'
 import { useAuth } from '../auth'
 import { usePageHeader } from '../components/Layout'
 import { IconArrowLeft, IconRefresh } from '../components/icons'
@@ -12,7 +12,7 @@ const PATCH = [['pendiente', 'Pendiente'], ['en_curso', 'En curso'], ['parcheado
 const IOC = [['no_revisado', 'No revisado'], ['sin_hallazgos', 'Sin hallazgos'], ['con_hallazgos', 'Con hallazgos']]
 const EVENTS = {
   caso_creado: 'Caso creado', paso_completado: 'Paso completado', paso_reabierto: 'Paso reabierto',
-  seguimiento_cliente: 'Seguimiento actualizado', clientes_agregados: 'Clientes agregados', caso_cerrado: 'Caso cerrado', caso_reabierto: 'Caso reabierto',
+  seguimiento_cliente: 'Seguimiento actualizado', playbook_actualizado: 'Playbook actualizado', clientes_agregados: 'Clientes agregados', caso_cerrado: 'Caso cerrado', caso_reabierto: 'Caso reabierto',
 }
 
 function Flow({ uc }) {
@@ -54,12 +54,67 @@ function Flow({ uc }) {
   )
 }
 
+function AttackFlow({ attack, uc }) {
+  return (
+    <div className="atk">
+      <p className="hint" style={{ marginBottom: 14 }}>Cómo avanza un atacante que explota {uc.cve_id} y en qué punto se lo puede cortar. Basado en el tipo de falla, el vector CVSS y la información de CISA (técnicas MITRE ATT&CK).</p>
+      <div className="atk-facts">{attack.facts.map((f) => <div className="atk-fact" key={f.k}><div className="k">{f.k}</div><div className="v">{f.v}</div></div>)}</div>
+      {attack.stages.map((s, i) => (
+        <Fragment key={i}>
+          <div className="atk-stage">
+            <div className="atk-card">
+              <div className="tac"><span>{i + 1}. {s.tactic}</span><span className="mitre">{s.mitre}</span></div>
+              <div className="t">{s.title}</div>
+              <div className="d">{s.desc}</div>
+            </div>
+            <div className="atk-link">⟶</div>
+            <div className="atk-cut"><b>CÓMO CORTARLO</b>{s.cut}</div>
+          </div>
+          {i < attack.stages.length - 1 && <div className="atk-stage"><div className="atk-down">↓</div></div>}
+        </Fragment>
+      ))}
+    </div>
+  )
+}
+
+function CodeBlock({ b }) {
+  const toast = useToast()
+  const copy = () => { try { navigator.clipboard.writeText(b.code); toast('Copiado al portapapeles') } catch { toast('No se pudo copiar', 'err') } }
+  return (
+    <div className="rb-code">
+      <div className="rb-bar"><span>{b.title}</span><span className="spacer" /><span className="lang">{b.lang}</span><button className="btn btn-sm btn-secondary" onClick={copy}>Copiar</button></div>
+      <pre>{b.code}</pre>
+    </div>
+  )
+}
+
+function Runbook({ sections }) {
+  return sections.map((sec) => (
+    <div className="rb-sec" key={sec.id}>
+      <h4>{sec.title}</h4>
+      {sec.blocks.map((b, i) => {
+        if (b.type === 'text') return <p key={i} className="prose" style={{ fontSize: 13, marginBottom: 10 }}>{b.text}</p>
+        if (b.type === 'code') return <CodeBlock key={i} b={b} />
+        if (b.type === 'table') return (
+          <table key={i} className="rb-table">
+            {b.head && <thead><tr>{b.head.map((h) => <th key={h}>{h}</th>)}</tr></thead>}
+            <tbody>{b.rows.map((r, j) => <tr key={j}>{r.map((c, k) => <td key={k}>{c}</td>)}</tr>)}</tbody>
+          </table>)
+        if (b.type === 'links') return <ul key={i} className="rb-list">{b.items.map((r) => <li key={r.url}><a href={r.url} target="_blank" rel="noreferrer noopener">{r.label}</a> <span className="dim mono" style={{ fontSize: 11 }}>{r.url}</span></li>)}</ul>
+        return (
+          <div key={i}>{b.title && <div className="lbl" style={{ marginBottom: 6 }}>{b.title}</div>}
+            <ul className={`rb-list ${b.type === 'check' ? 'rb-check' : ''}`}>{b.items.map((t) => <li key={t}>{t}</li>)}</ul></div>)
+      })}
+    </div>
+  ))
+}
+
 export default function UseCaseDetail() {
   const { code } = useParams()
   const { canWrite } = useAuth()
   const toast = useToast()
   const { data: uc, error, loading, setData } = useFetch(() => api.get(`/usecases/${code}`), [code], { interval: 60000 })
-  const [tab, setTab] = useState('flujo')
+  const [tab, setTab] = useState('ataque')
   const [closing, setClosing] = useState(null)
   const [notes, setNotes] = useState({})
   usePageHeader(uc ? `${uc.code} · ${uc.cve_id}` : code, uc ? `${uc.vendor} ${uc.product}` : 'Caso de uso SOC')
@@ -98,17 +153,32 @@ export default function UseCaseDetail() {
 
       <div className="toolbar">
         <div className="chips">
-          {[['flujo', 'Flujo'], ['playbook', `Playbook (${uc.progress.done}/${uc.progress.total})`], ['clientes', `Seguimiento por cliente (${uc.clients.total})`], ['historial', 'Historial']].map(([k, l]) => (
+          {[['ataque', 'Flujo del ataque'], ['playbook', `Playbook (${uc.progress.done}/${uc.progress.total})`], ['runbook', 'Runbook SOC'], ['clientes', `Seguimiento por cliente (${uc.clients.total})`], ['proceso', 'Proceso SOC'], ['historial', 'Historial']].map(([k, l]) => (
             <button key={k} className={`chip ${tab === k ? 'on' : ''}`} onClick={() => setTab(k)}>{l}</button>
           ))}
         </div>
       </div>
 
-      {tab === 'flujo' && <div className="card"><Flow uc={uc} /></div>}
+      {tab === 'ataque' && <div className="card"><AttackFlow attack={uc.attack} uc={uc} /></div>}
+      {tab === 'proceso' && <div className="card"><p className="hint" style={{ marginBottom: 14, textAlign: 'center' }}>Cómo se gestionó esta alerta dentro de Vectus, desde la detección hasta el cierre.</p><Flow uc={uc} /></div>}
+      {tab === 'runbook' && (
+        <div className="card">
+          <div className="row" style={{ marginBottom: 16 }}>
+            <p className="hint">Procedimiento técnico para el analista SOC: verificación, consultas de hunting para el SIEM, contención, evidencias y criterios de cierre. Ajustar índices, tablas y rangos de red a cada cliente.</p>
+            <span className="spacer" />
+            <button className="btn btn-sm btn-secondary" onClick={() => download(`/usecases/${code}/runbook.md`).catch((e) => toast(e.message, 'err'))}>Descargar (.md)</button>
+          </div>
+          <Runbook sections={uc.runbook} />
+        </div>
+      )}
 
       {tab === 'playbook' && (
         <div className="card">
-          <p className="hint" style={{ marginBottom: 16 }}>Pasos para el equipo de seguridad, armados según el tipo de vulnerabilidad y la cobertura de FortiGuard. Tildá cada paso a medida que se completa: queda registrado quién y cuándo.</p>
+          <div className="row" style={{ marginBottom: 16 }}>
+            <p className="hint">Pasos para el equipo de seguridad según el tipo de vulnerabilidad. Tildá cada paso a medida que se completa: queda registrado quién y cuándo.</p>
+            <span className="spacer" />
+            {!locked && <button className="btn btn-sm btn-secondary" title="Rearmar con la plantilla actual, conservando lo tildado" onClick={() => call(() => api.post(`/usecases/${code}/rebuild-playbook`), 'Playbook actualizado')}><IconRefresh />Actualizar playbook</button>}
+          </div>
           {uc.playbook.map((sec) => {
             const done = sec.steps.filter((s) => s.done).length
             return (
@@ -123,7 +193,7 @@ export default function UseCaseDetail() {
                         setData({ ...uc, playbook: uc.playbook.map((x) => ({ ...x, steps: x.steps.map((y) => (y.id === s.id ? { ...y, done } : y)) })) })
                         call(() => api.patch(`/usecases/${code}/steps/${s.id}`, { done }))
                       }} />
-                    <div><div className="txt">{s.text}</div>{s.done && <div className="who">{s.done_by} · {fmtDateTime(s.done_at)}</div>}</div>
+                    <div><div className="txt">{s.text}</div>{s.hint && <div className="hint2">{s.hint}</div>}{s.done && <div className="who">{s.done_by} · {fmtDateTime(s.done_at)}</div>}</div>
                   </label>
                 ))}
               </div>
