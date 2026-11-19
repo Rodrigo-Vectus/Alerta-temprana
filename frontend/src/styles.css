@@ -272,3 +272,46 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px;}
   .content,.topbar-inner{padding-left:18px;padding-right:18px;}
   .sync-chip{display:none;}
 }
+
+/* ---------- Diagrama de flujo de casos de uso (estilo CU-SOC-001) ---------- */
+.flow{display:flex;flex-direction:column;align-items:stretch;gap:0;max-width:760px;margin:0 auto;}
+.flow-head{background:linear-gradient(135deg,#1c3a63,#1a2c4d);color:#fff;border-radius:12px;padding:16px 20px;text-align:center;}
+.flow-head .t{font-weight:800;font-size:16px;}
+.flow-head .s{font-family:'JetBrains Mono',monospace;font-size:11px;opacity:.8;margin-top:4px;}
+.flow-arrow{text-align:center;color:var(--dim);font-size:13px;line-height:1;padding:7px 0;}
+.flow-step{position:relative;border:1px solid var(--border-b);background:var(--surface);border-radius:12px;padding:14px 18px;text-align:center;transition:all .2s;}
+.flow-step .t{font-weight:700;color:var(--bright);font-size:14px;}
+.flow-step .d{font-size:12px;color:var(--dim);margin-top:3px;}
+.flow-step .x{font-family:'JetBrains Mono',monospace;font-size:11px;margin-top:6px;color:var(--accent-l);}
+.flow-step .st{position:absolute;top:10px;right:12px;}
+.flow-step.done{border-color:rgba(34,166,94,.45);}
+.flow-step.done .st::after{content:'✓';color:var(--ok);font-weight:800;}
+.flow-step.current{border-color:var(--warn);box-shadow:0 0 0 3px var(--warn-bg);}
+.flow-step.current .st::after{content:'●';color:var(--warn);}
+.flow-step.pending{opacity:.55;border-style:dashed;}
+.flow-step.rejected{border-color:var(--danger);}
+.flow-step.rejected .st::after{content:'✕';color:var(--danger);font-weight:800;}
+.flow-step.final.done{background:rgba(34,166,94,.07);}
+.flow-dec{text-align:center;padding:4px 0;}
+.flow-dec .q{font-weight:700;color:var(--bright);font-size:13.5px;}
+.flow-dec .q::before{content:'◆ ';color:var(--accent-l);font-size:11px;}
+.flow-branches{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px;}
+.flow-branch{border:1px solid var(--border-b);border-radius:10px;padding:10px 12px;text-align:center;opacity:.45;}
+.flow-branch .lbl{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.08em;margin-bottom:4px;}
+.flow-branch.no .lbl{color:var(--danger);}
+.flow-branch.si .lbl{color:var(--ok);}
+.flow-branch .n{font-size:12.5px;font-weight:700;color:var(--bright);}
+.flow-branch.taken{opacity:1;box-shadow:0 0 0 2px var(--accent-g);border-color:var(--accent-l);}
+
+/* ---------- Playbook ---------- */
+.pb-sec{margin-bottom:18px;}
+.pb-sec h5{font-size:13px;font-weight:800;color:var(--bright);margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+.pb-step{display:flex;gap:12px;align-items:flex-start;padding:9px 12px;border-radius:9px;border:1px solid var(--border);margin-bottom:6px;background:var(--surface);transition:background .15s;}
+.pb-step:hover{background:var(--card-hover);}
+.pb-step input{margin-top:3px;width:16px;height:16px;flex-shrink:0;cursor:pointer;}
+.pb-step .txt{font-size:13px;line-height:1.55;color:var(--text);}
+.pb-step.done .txt{color:var(--dim);text-decoration:line-through;}
+.pb-step .who{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);margin-top:3px;}
+.progress{height:8px;border-radius:8px;background:var(--border);overflow:hidden;}
+.progress>span{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--cyan));border-radius:8px;transition:width .3s;}
+.sel-sm{padding:6px 8px !important;font-size:12px !important;}

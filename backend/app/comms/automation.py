@@ -24,6 +24,7 @@ from app.comms.pdf import PdfError, docx_to_pdf
 from app.db import SessionLocal
 from app.models import Alert, Client, ClientContact, Communication, CveEnrichment, KevVulnerability
 from app.settings import get_settings
+from app.usecases import ensure_use_case
 
 log = logging.getLogger("automation")
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -117,6 +118,7 @@ def schedule_for_results(results: list[dict]):
             comm.code = f"COM-{date.today().year}-{comm.id:04d}"
             _history(alert, "comunicado_programado", comentario=f"{comm.code} · envío automático {local_hhmm(when)}")
             _set_alert(alert, "en_revision", f"Envío automático programado ({comm.code})")
+            ensure_use_case(db, alert, "sistema", (comm.content or {}).get("fortiguard"))
             db.commit()
             log.warning("COMUNICADO PROGRAMADO %s para %s (%s)", comm.code, local_hhmm(when), alert.code)
             created.append(comm.code)

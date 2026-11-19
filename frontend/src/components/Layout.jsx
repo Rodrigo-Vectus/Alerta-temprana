@@ -42,7 +42,7 @@ const NAV = [
   ] },
   { group: 'Respuesta', items: [
     { to: '/comunicados', label: 'Comunicados', icon: IconMail },
-    { to: '/casos-de-uso', label: 'Casos de uso SOC', icon: IconFlow, soon: 'Fase 7' },
+    { to: '/casos-de-uso', label: 'Casos de uso SOC', icon: IconFlow },
   ] },
   { group: 'Gestión', items: [
     { to: '/clientes', label: 'Clientes', icon: IconBuilding },

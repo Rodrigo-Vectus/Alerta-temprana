@@ -25,7 +25,7 @@ const EVENT_LABEL = {
   nueva_en_kev: 'Nueva en CISA KEV', actualizada_en_kev: 'Actualizada en CISA KEV', recalculo: 'Puntaje recalculado',
   reintento_nvd: 'Datos de NVD completados', cambio_estado: 'Cambio de estado',
   comunicado_generado: 'Comunicado generado', comunicado_regenerado: 'Comunicado regenerado',
-  comunicado_programado: 'Envío automático programado', comunicado_eliminado: 'Comunicado eliminado', envio_cancelado: 'Envío cancelado', envio_manual: 'Envío a clientes solicitado',
+  caso_creado: 'Caso de uso creado', comunicado_programado: 'Envío automático programado', comunicado_eliminado: 'Comunicado eliminado', envio_cancelado: 'Envío cancelado', envio_manual: 'Envío a clientes solicitado',
 }
 
 export default function AlertDetail() {
@@ -36,6 +36,10 @@ export default function AlertDetail() {
   const { data: a, error, loading, setData } = useFetch(() => api.get(`/alerts/${code}`), [code])
   const comm = useFetch(() => api.get(`/communications/by-alert/${code}`), [code])
   const [generating, setGenerating] = useState(false)
+  const uc = useFetch(() => api.get(`/usecases/by-alert/${code}`), [code])
+  const createCase = async () => {
+    try { const r = await api.post(`/usecases/from-alert/${code}`); toast(`Caso ${r.code} creado`); navigate(`/casos-de-uso/${r.code}`) } catch (e) { toast(e.message, 'err') }
+  }
   const [pending, setPending] = useState(null)
   const [comment, setComment] = useState('')
   const [busy, setBusy] = useState(false)
@@ -169,9 +173,20 @@ export default function AlertDetail() {
               </>
             )}
           </div>
-          <div className="card soon-card">
+          <div className="card" style={{ borderColor: uc.data ? 'var(--accent-l)' : undefined }}>
             <div className="card-title"><IconFlow width={14} />Caso de uso SOC</div>
-            <p>El flujo y el playbook para el equipo de seguridad, asociados a <b className="mono">{a.code}</b>, llegan en la <b>Fase 7</b>.</p>
+            {uc.data ? (
+              <div className="row">
+                <div><div className="code mono" style={{ color: 'var(--accent-l)', fontWeight: 700 }}>{uc.data.code}</div><div className="hint">Estado: {uc.data.status}</div></div>
+                <span className="spacer" />
+                <Link to={`/casos-de-uso/${uc.data.code}`} className="btn btn-sm btn-primary" style={{ textDecoration: 'none' }}>Abrir</Link>
+              </div>
+            ) : (
+              <>
+                <p className="hint" style={{ marginBottom: 14 }}>Flujo, playbook para el equipo de seguridad y seguimiento de la remediación por cliente. Se crea solo al generar el comunicado.</p>
+                {canWrite ? <button className="btn btn-sm btn-secondary" onClick={createCase}>Crear caso de uso</button> : <span className="hint">Sin caso todavía.</span>}
+              </>
+            )}
           </div>
 
           <div className="card">

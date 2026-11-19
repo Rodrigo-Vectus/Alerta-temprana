@@ -15,6 +15,7 @@ from app.comms.document import build_docx
 from app.comms.newsletter import render_newsletter
 from app.comms.pdf import PdfError, docx_to_pdf
 from app.db import SessionLocal
+from app.usecases import ensure_use_case
 from app.models import Alert, Communication, CveEnrichment, KevVulnerability, User
 
 router = APIRouter(prefix="/api/communications", tags=["comunicados"])
@@ -145,6 +146,7 @@ def create_from_alert(alert_code: str, regenerate: bool = False, user: User = De
             _alert_history(alert, "comunicado_regenerado", user, comentario=comm.code)
         if alert.status in ("candidata", "monitoreo", "descartada_auto"):
             _set_alert_status(alert, "en_revision", user, f"Borrador {comm.code} generado")
+        ensure_use_case(db, alert, user.email, content.get("fortiguard"))
         db.commit()
         return _full(comm, alert, kev)
 

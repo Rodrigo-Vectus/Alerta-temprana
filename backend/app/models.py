@@ -199,3 +199,39 @@ class Setting(Base):
     value: Mapped[dict] = mapped_column(JSONB, default=dict)
     updated_by: Mapped[str | None] = mapped_column(String(255))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class UseCase(Base):
+    """Caso de uso SOC asociado a una alerta: flujo, playbook y seguimiento de remediación por cliente."""
+    __tablename__ = "use_cases"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str | None] = mapped_column(String(32), unique=True)
+    alert_id: Mapped[int] = mapped_column(ForeignKey("alerts.id"), unique=True, index=True)
+    title: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(16), default="abierto")       # abierto | cerrado
+    playbook: Mapped[list] = mapped_column(JSONB, default=list)
+    history: Mapped[list] = mapped_column(JSONB, default=list)
+    closure_notes: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[str | None] = mapped_column(String(255))
+    closed_by: Mapped[str | None] = mapped_column(String(255))
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class UseCaseClient(Base):
+    """Seguimiento de la remediación de un cliente dentro de un caso de uso."""
+    __tablename__ = "use_case_clients"
+    __table_args__ = (UniqueConstraint("use_case_id", "client_id", name="uq_usecase_client"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    use_case_id: Mapped[int] = mapped_column(ForeignKey("use_cases.id", ondelete="CASCADE"), index=True)
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"))
+    client_name: Mapped[str] = mapped_column(String(255))
+    exposure: Mapped[str] = mapped_column(String(16), default="desconocido")   # desconocido | expuesto | no_expuesto
+    patch: Mapped[str] = mapped_column(String(16), default="pendiente")       # pendiente | en_curso | parcheado | no_aplica
+    ioc: Mapped[str] = mapped_column(String(16), default="no_revisado")       # no_revisado | sin_hallazgos | con_hallazgos
+    notes: Mapped[str | None] = mapped_column(Text)
+    updated_by: Mapped[str | None] = mapped_column(String(255))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

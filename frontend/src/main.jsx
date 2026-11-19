@@ -14,7 +14,8 @@ import Communications from './pages/Communications'
 import Dashboard from './pages/Dashboard'
 import Login from './pages/Login'
 import Settings from './pages/Settings'
-import Soon from './pages/Soon'
+import UseCaseDetail from './pages/UseCaseDetail'
+import UseCases from './pages/UseCases'
 import Users from './pages/Users'
 import Vendors from './pages/Vendors'
 import './styles.css'
@@ -45,7 +46,8 @@ function App() {
         <Route path="alertas/:code" element={<AlertDetail />} />
         <Route path="comunicados" element={<Communications />} />
         <Route path="comunicados/:code" element={<CommunicationEditor />} />
-        <Route path="casos-de-uso" element={<Soon kind="casos" />} />
+        <Route path="casos-de-uso" element={<UseCases />} />
+        <Route path="casos-de-uso/:code" element={<UseCaseDetail />} />
         <Route path="clientes" element={<Clients />} />
         <Route path="fabricantes" element={<Vendors />} />
         <Route path="usuarios" element={<RequireAuth admin><Users /></RequireAuth>} />

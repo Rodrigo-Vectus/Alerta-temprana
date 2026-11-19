@@ -369,6 +369,15 @@ def fortinet_cards(c, kev=None, cve="", short="", fg=None):
     return cards
 
 
+def compact_fortiguard(fg):
+    if not fg:
+        return None
+    pick = lambda items: [{"name": x["name"], "id": x.get("id"), "url": x.get("url")} for x in (items or [])[:6]]
+    return {"ips": pick(fg.get("ips")), "endpoint": pick(fg.get("endpoint")), "virus": pick(fg.get("virus")),
+            "dast": pick(fg.get("dast")), "waf": pick(fg.get("waf")),
+            "outbreak": {"name": fg["outbreak"]["name"], "url": fg["outbreak"].get("url")} if fg.get("outbreak") else None}
+
+
 def build_content(kev, enr, alert, fg: dict | None = None) -> dict:
     c = classify(kev, enr)
     prod = product_display(kev.vendor_project, kev.product)
@@ -468,4 +477,5 @@ def build_content(kev, enr, alert, fg: dict | None = None) -> dict:
         "next_steps": NEXT_STEPS,
         "meta": {"surface": c["surface"], "family": c["family"], "alert_code": alert.code, "score": alert.score,
                  "fortiguard": bool(fg)},
+        "fortiguard": compact_fortiguard(fg),
     }
