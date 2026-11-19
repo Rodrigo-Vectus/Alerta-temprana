@@ -130,21 +130,83 @@ def _send_smtp(content: dict, to: list[str], attachments: list[tuple[str, bytes,
         maintype, subtype = mime.split("/", 1)
         msg.add_attachment(data, maintype=maintype, subtype=subtype, filename=filename)
 
-    ctx = ssl.create_default_context()
-    if c["security"] == "ssl":
-        server = smtplib.SMTP_SSL(c["host"], c["port"], context=ctx, timeout=30)
-    else:
-        server = smtplib.SMTP(c["host"], c["port"], timeout=30)
+    server = _smtp_connect(c)
     try:
-        server.ehlo()
-        if c["security"] == "starttls":
-            server.starttls(context=ctx)
-            server.ehlo()
-        if c["user"] and c["password"]:
-            server.login(c["user"], c["password"])
         server.send_message(msg)
     finally:
         try:
             server.quit()
         except Exception:
             pass
+
+
+# --- Verificación de la configuración (la usa install.sh) -------------------------------------
+
+def _smtp_connect(c):
+    ctx = ssl.create_default_context()
+    if c["security"] == "ssl":
+        server = smtplib.SMTP_SSL(c["host"], c["port"], context=ctx, timeout=30)
+    else:
+        server = smtplib.SMTP(c["host"], c["port"], timeout=30)
+    server.ehlo()
+    if c["security"] == "starttls":
+        server.starttls(context=ctx)
+        server.ehlo()
+    if c["user"] and c["password"]:
+        server.login(c["user"], c["password"])
+    return server
+
+
+def check(send_to: str | None = None) -> str:
+    """Valida las credenciales del proveedor configurado y, opcionalmente, manda un mail simple."""
+    if not is_configured():
+        raise RuntimeError("El correo no está configurado en el .env")
+    if provider() == "graph":
+        g = graph_config()
+        with httpx.Client(timeout=30) as client:
+            tok = client.post(f"https://login.microsoftonline.com/{g['tenant']}/oauth2/v2.0/token", data={
+                "client_id": g["client_id"], "client_secret": g["client_secret"],
+                "scope": "https://graph.microsoft.com/.default", "grant_type": "client_credentials"})
+            if tok.status_code != 200:
+                raise RuntimeError(f"Microsoft rechazó las credenciales de la app ({tok.status_code}): {tok.text[:200]}")
+            if send_to:
+                r = client.post(f"https://graph.microsoft.com/v1.0/users/{g['sender']}/sendMail",
+                                headers={"Authorization": f"Bearer {tok.json()['access_token']}"},
+                                json={"message": {"subject": "Vectus SAT · prueba de configuración",
+                                                  "body": {"contentType": "Text", "content": "El envío de correo de Vectus SAT funciona."},
+                                                  "toRecipients": [{"emailAddress": {"address": send_to}}]},
+                                      "saveToSentItems": False})
+                if r.status_code != 202:
+                    raise RuntimeError(f"Microsoft Graph no aceptó el envío ({r.status_code}): {r.text[:200]}")
+        return f"Microsoft Graph OK ({g['sender']})" + (f" · prueba enviada a {send_to}" if send_to else "")
+    c = config()
+    server = _smtp_connect(c)
+    try:
+        if send_to:
+            msg = EmailMessage()
+            msg["Subject"] = "Vectus SAT · prueba de configuración"
+            msg["From"] = formataddr((c["from_name"], c["from_addr"]))
+            msg["To"] = send_to
+            msg.set_content("El envío de correo de Vectus SAT funciona.")
+            server.send_message(msg)
+    finally:
+        try:
+            server.quit()
+        except Exception:
+            pass
+    return f"SMTP OK ({c['host']}:{c['port']} como {c['user'] or c['from_addr']})" + (f" · prueba enviada a {send_to}" if send_to else "")
+
+
+if __name__ == "__main__":
+    import argparse
+    import sys
+
+    p = argparse.ArgumentParser(description="Verificar la configuración de correo")
+    p.add_argument("--check", action="store_true", help="Validar credenciales (no envía nada)")
+    p.add_argument("--send", metavar="EMAIL", help="Enviar un mail simple de prueba")
+    a = p.parse_args()
+    try:
+        print(check(a.send))
+    except Exception as e:  # noqa: BLE001
+        print(f"ERROR: {e}")
+        sys.exit(1)
