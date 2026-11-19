@@ -244,6 +244,28 @@ def rescore_all():
         return {"total": len(before), "changed": changed}
 
 
+def backfill(days):
+    """Evalúa (crea alertas) las KEV agregadas en los últimos N días que quedaron en la carga inicial.
+    No genera comunicados ni envía mails: solo las deja visibles en la consola."""
+    with SessionLocal() as db:
+        since = date.today() - timedelta(days=days)
+        have = set(db.scalars(select(Alert.cve_id)).all())
+        kevs = [k for k in db.scalars(select(KevVulnerability).where(KevVulnerability.date_added >= since)
+                                      .order_by(KevVulnerability.date_added)).all() if k.cve_id not in have]
+        print(f"{len(kevs)} KEV de los últimos {days} días sin evaluar. Consultando NVD/EPSS (puede tardar unos minutos)...")
+        enrich(db, [k.cve_id for k in kevs])
+        watch, techs = load_watch(db), load_techs(db)
+        out = []
+        for k in kevs:
+            a = evaluate(db, k.cve_id, watch, techs, "carga_inicial")
+            if a:
+                out.append((a.score, a.code, k.cve_id, str(k.date_added), f"{k.vendor_project} {k.product}"[:50], a.status))
+        db.commit()
+        for row in sorted(out, reverse=True):
+            print(f"{row[0]:>4}  {row[1]}  {row[2]:<18} {row[3]}  {row[5]:<16} {row[4]}")
+        return len(out)
+
+
 def preview(days):
     """Muestra qué puntaje tendrían las KEV de los últimos N días, sin crear alertas."""
     with SessionLocal() as db:
@@ -275,6 +297,7 @@ if __name__ == "__main__":
     g.add_argument("--process", action="store_true", help="Procesar eventos pendientes")
     g.add_argument("--rescore-all", action="store_true", help="Recalcular todas las alertas")
     g.add_argument("--preview", type=int, metavar="DIAS", help="Simular puntaje de KEV recientes")
+    g.add_argument("--backfill", type=int, metavar="DIAS", help="Crear alertas para KEV de los últimos N días (sin enviar nada)")
     a = p.parse_args()
     init_db()
     with SessionLocal() as db:
@@ -283,5 +306,7 @@ if __name__ == "__main__":
         print(process_pending())
     elif a.rescore_all:
         print(rescore_all())
+    elif a.backfill:
+        backfill(a.backfill)
     else:
         preview(a.preview)
