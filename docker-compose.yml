@@ -47,7 +47,10 @@ services:
     # Conversor DOCX -> PDF (LibreOffice). Solo accesible desde la red interna de Docker.
     image: gotenberg/gotenberg:8
     restart: unless-stopped
-    command: ["gotenberg", "--api-timeout=120s", "--log-level=warn"]
+    # LibreOffice arranca con el contenedor y no se reinicia cada 10 conversiones
+    # (evita que algunos PDF tarden mucho más que otros por arrancar en frío)
+    command: ["gotenberg", "--api-timeout=120s", "--log-level=warn",
+              "--libreoffice-auto-start=true", "--libreoffice-restart-after=0"]
 
   nginx:
     build:

@@ -67,6 +67,7 @@ export default function CommunicationEditor() {
   const navigate = useNavigate()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [cancelReason, setCancelReason] = useState(null)
+  const [elapsed, setElapsed] = useState(0)
   const toast = useToast()
   const { data, error, loading, setData } = useFetch(() => api.get(`/communications/${code}`), [code])
   const mail = useFetch(() => api.get('/communications/mail-status'), [])
@@ -115,6 +116,11 @@ export default function CommunicationEditor() {
   const locked = !canWrite || data.status === 'enviado'
   const set = (k) => (v) => { setContent((c) => ({ ...c, [k]: v })); setDirty(true) }
 
+  useEffect(() => {
+    if (!busy) { setElapsed(0); return undefined }
+    const t = setInterval(() => setElapsed((e) => e + 1), 1000)
+    return () => clearInterval(t)
+  }, [busy])
   const run = async (key, fn, okMsg) => {
     setBusy(key)
     try { const r = await fn(); if (okMsg) toast(okMsg); return r } catch (e) { toast(e.message, 'err') } finally { setBusy('') }
@@ -364,6 +370,7 @@ export default function CommunicationEditor() {
             <div className="fg"><label>Destinatario</label><input type="email" value={sendModal.to} onChange={(e) => setSendModal({ ...sendModal, to: e.target.value })} /></div>
             <label className="check"><input type="checkbox" checked={sendModal.docx} onChange={(e) => setSendModal({ ...sendModal, docx: e.target.checked })} />Adjuntar también el DOCX editable</label>
             {mail.data && !mail.data.configured && <div className="alert-box err">El correo no está configurado en el servidor.</div>}
+            {busy === 'send' && <div className="alert-box info">Armando el informe PDF y enviando por correo… suele tardar entre 10 y 20 segundos. <b>{elapsed} s</b></div>}
           </div>
         </Modal>
       )}
