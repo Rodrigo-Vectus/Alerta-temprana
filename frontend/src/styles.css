@@ -259,6 +259,16 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px;}
 .auth-desc{font-size:13px;color:var(--dim);margin-bottom:24px;line-height:1.6;}
 .auth-foot{display:flex;justify-content:space-between;align-items:center;margin-top:22px;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);letter-spacing:.06em;text-transform:uppercase;}
 
+.otp-notice{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;margin:4px 0 20px;border-radius:12px;background:var(--accent-g);border:1px solid var(--border-b);font-size:13px;line-height:1.6;color:var(--text);}
+.otp-notice b{color:var(--bright);word-break:break-all;}
+.otp-notice .dim{color:var(--dim);}
+.otp-notice-icon{flex:none;width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:var(--accent);color:#fff;font-size:15px;}
+.otp-input{font-family:'JetBrains Mono',monospace !important;font-size:28px !important;letter-spacing:.55em;text-align:center;padding:12px 0 12px .55em !important;}
+.otp-actions{display:flex;justify-content:space-between;gap:12px;}
+.link-btn{background:none;border:0;padding:4px 0;color:var(--accent-l);font:600 12.5px inherit;font-family:inherit;cursor:pointer;}
+.link-btn:disabled{color:var(--dim);cursor:default;}
+.link-btn:not(:disabled):hover{text-decoration:underline;}
+
 /* ---------- Responsive ---------- */
 .menu-btn{display:none !important;}
 @media (max-width:1200px){.kpis{grid-template-columns:repeat(3,1fr);}.g-main{grid-template-columns:1fr;}}

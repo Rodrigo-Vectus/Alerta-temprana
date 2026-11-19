@@ -46,6 +46,7 @@ y avisa a los clientes con el formato Vectus, sin intervención manual.**
 | 🛡️ **Protección Fortinet específica** | Consulta **FortiGuard** y agrega las firmas reales de IPS, antivirus, EDR y outbreak de cada CVE, más recomendaciones de hardening. |
 | 🧭 **Caso de uso SOC por alerta** | Genera `CU-SOC-NNN` con el proceso SOC (responsables y plazos), el flujo del ataque (MITRE ATT&CK), el playbook y un **runbook técnico** con consultas para Splunk, Sentinel, Wazuh, FortiSIEM, QRadar, Elastic, FortiGate, Palo Alto, Check Point, Defender y más. |
 | 🖥️ **Consola web** | Panel, alertas, comunicados, casos de uso, clientes y contactos, usuarios con roles, auditoría y configuración. Modo oscuro y claro. |
+| 🔑 **Ingreso sin contraseña** | Se entra con un código de 6 dígitos que llega por mail. Solo los usuarios cargados lo reciben; la pantalla responde igual para cualquier correo. |
 
 ---
 
@@ -127,7 +128,7 @@ sequenceDiagram
 </tr>
 <tr>
 <td><b>Modo claro</b><br><img src="docs/img/dashboard_light.png"></td>
-<td><b>Ingreso</b><br><img src="docs/img/login.png"></td>
+<td><b>Ingreso con código por mail</b><br><img src="docs/img/login.png"></td>
 </tr>
 </table>
 
@@ -196,12 +197,12 @@ cd /opt/vectus-sat
 sudo ./install.sh
 ```
 
-El instalador pregunta todo lo necesario. **Las contraseñas se escriben sin mostrarse en pantalla.**
+El instalador pregunta todo lo necesario. **Las claves (correo, API) se escriben sin mostrarse en pantalla.** La consola no usa contraseñas: se ingresa con un código que llega por mail.
 
 | Paso | Qué pregunta |
 |---|---|
 | 1 · Instancia | Nombre de la instalación, puerto web, URL de la consola y zona horaria |
-| 2 · Administrador | Correo y contraseña inicial (o la genera al azar) |
+| 2 · Administrador | Correo del administrador (ingresa con código por mail) |
 | 3 · Equipo SOC | Correos que reciben el aviso previo |
 | 4 · Correo | **Gmail**, **Microsoft 365 (Graph)**, **Microsoft 365 por SMTP**, **otro SMTP** o configurarlo más tarde |
 | 5 · Opciones | API key de NVD (opcional), umbrales e intervalo de consulta |
@@ -213,9 +214,8 @@ Después:
 3. **Verifica las credenciales de correo** y ofrece mandar un mail de prueba.
 4. Espera la primera descarga del catálogo de CISA, que queda como línea base y no genera avisos.
 5. Ofrece cargar retroactivamente las KEV de los últimos N días. Esto no envía nada.
-6. Borra la contraseña inicial del `.env` una vez creado el administrador.
 
-Al final muestra la URL y el usuario. En el primer ingreso la consola pide cambiar la contraseña. El siguiente paso es cargar **clientes y contactos** en la sección *Clientes*.
+Al final muestra la URL y el usuario. Para entrar se escribe el correo y llega un **código de 6 dígitos**. El siguiente paso es cargar **clientes y contactos** en la sección *Clientes*.
 
 > Si en el servidor ya hay otra instalación, el instalador no deja reusar su nombre y propone otro puerto libre, así no se pisan.
 >
@@ -260,6 +260,7 @@ Todos los comandos se ejecutan desde la carpeta del proyecto (`cd /opt/vectus-sa
 | Detener / levantar | `docker compose stop` / `docker compose up -d` |
 | Verificar el correo | `docker compose exec backend python -m app.comms.mailer --check` |
 | Mail de prueba | `docker compose exec backend python -m app.comms.mailer --send vos@empresa.com` |
+| Código de ingreso de emergencia | `docker compose exec backend python -m app.otp vos@empresa.com` |
 | Forzar una consulta a CISA | `docker compose exec backend python -m app.collectors.kev --force` |
 | Alertas de los últimos N días | `docker compose exec backend python -m app.scoring --backfill 30` |
 | Simular puntajes (no guarda nada) | `docker compose exec backend python -m app.scoring --preview 30` |
@@ -328,7 +329,10 @@ Todo se define en el `.env`, que genera `install.sh`. La lista completa y coment
 - la URL de la consola que aparece en los links;
 - si se adjunta también el DOCX editable.
 
-### Roles
+### Usuarios y roles
+
+Solo pueden ingresar los correos cargados en **Administración › Usuarios**. Al dar de alta a alguien no se define contraseña: entra con el código que le llega por mail. Desactivar un usuario le corta el acceso de inmediato.
+
 
 | Rol | Puede |
 |---|---|
@@ -340,9 +344,10 @@ Todo se define en el `.env`, que genera `install.sh`. La lista completa y coment
 
 ## Seguridad
 
-- **Secretos fuera del repositorio:** `.env`, `data/` y `backups/` están en `.gitignore`. El `.env` se crea con permisos `600` y la contraseña inicial se borra después del primer arranque.
-- **Autenticación:** JWT HS256 con vencimiento de 8 horas y contraseñas con bcrypt. Hay que cambiar la contraseña en el primer ingreso.
-- **Límite de intentos** en `/api/auth/login` (nginx, 5 por minuto por IP).
+- **Secretos fuera del repositorio:** `.env`, `data/` y `backups/` están en `.gitignore`. El `.env` se crea con permisos `600`.
+- **Ingreso sin contraseña (OTP por mail):** el usuario escribe su correo y recibe un código de 6 dígitos. Solo se envía a usuarios activos cargados en *Usuarios*, y la respuesta es la misma para cualquier correo, así no se puede averiguar quién tiene acceso. El código vence a los 10 minutos, sirve una sola vez, se anula tras 5 intentos fallidos y solo se guarda su HMAC. Se puede pedir uno por minuto y hasta 6 por hora.
+- **Sesión:** JWT HS256 con vencimiento de 8 horas.
+- **Límite por IP** en los endpoints de ingreso (nginx, 10 por minuto).
 - **Auditoría:** cada acción de escritura queda registrada con el usuario, la IP y el detalle.
 - **Cabeceras de seguridad:** `X-Frame-Options`, `X-Content-Type-Options` y `Referrer-Policy`.
 - **Superficie expuesta:** solo nginx publica un puerto. La base, la API y Gotenberg quedan en la red interna de Docker.
@@ -386,7 +391,7 @@ Todo se define en el `.env`, que genera `install.sh`. La lista completa y coment
 | CVSS vacío en algunas alertas | NVD todavía no publicó el análisis. El worker reintenta solo. Una `NVD_API_KEY` acelera las consultas. |
 | `git push` da *Connection refused* en el puerto 22 | La red bloquea SSH saliente. Usá SSH por el puerto 443: en `~/.ssh/config` agregá `Host github.com` con `Hostname ssh.github.com` y `Port 443`. |
 | Los cambios no se ven en la consola | Recargá con `Ctrl+F5`. Si no alcanza, ejecutá `docker compose up -d --build nginx`. |
-| Olvidé la contraseña del administrador | Otro admin la resetea en *Usuarios*. Si no hay otro, ejecutá `docker compose exec backend python -c "from app.auth import hash_password;print(hash_password('NuevaClave123'))"` y actualizá `users.password_hash` con `docker compose exec db psql`. |
+| No llega el código de ingreso | Revisá spam y que el correo esté cargado y activo en *Usuarios*. Verificá el envío con `docker compose exec backend python -m app.comms.mailer --check`. Para entrar igual, generá un código desde el servidor: `docker compose exec backend python -m app.otp tu@correo.com`. |
 
 ---
 

@@ -4,7 +4,7 @@ import { api, storage } from '../api'
 import { useAuth } from '../auth'
 import { timeAgo } from './ui'
 import {
-  IconAlert, IconBuilding, IconGear, IconDashboard, IconEye, IconFlow, IconKey, IconList, IconLogout, IconMail, IconMenu, IconUsers,
+  IconAlert, IconBuilding, IconGear, IconDashboard, IconEye, IconFlow, IconList, IconLogout, IconMail, IconMenu, IconUsers,
 } from './icons'
 
 // ---------- Título de página (cada página lo define) ----------
@@ -112,7 +112,6 @@ export default function Layout() {
               <div className="sb-user-name" title={user?.email}>{user?.full_name || user?.email}</div>
               <div className="sb-user-role">{ROLE_LABEL[user?.role] || user?.role}</div>
             </div>
-            <button className="icon-btn" title="Cambiar contraseña" onClick={() => navigate('/cambiar-clave')}><IconKey /></button>
             <button className="icon-btn" title="Cerrar sesión" onClick={() => { logout(); navigate('/login') }}><IconLogout /></button>
           </div>
         </aside>

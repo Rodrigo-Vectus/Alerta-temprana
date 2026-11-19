@@ -1,8 +1,8 @@
 import os
 import re
+import secrets
 from datetime import datetime, timedelta, timezone
 
-import bcrypt
 import jwt
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -16,9 +16,7 @@ JWT_ALG = "HS256"
 JWT_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "8"))
 ROLES = ("admin", "analista", "lector")
 WRITE_ROLES = ("admin", "analista")
-MAX_FAILED, LOCK_MINUTES = 5, 15
 READ_ONLY_POSTS = {"/api/communications/preview"}   # POST que no modifican datos
-PASSWORD_CHANGE_PATHS = {"/api/auth/me", "/api/auth/change-password"}
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 bearer = HTTPBearer(auto_error=False)
@@ -26,25 +24,6 @@ bearer = HTTPBearer(auto_error=False)
 
 def now_utc():
     return datetime.now(timezone.utc)
-
-
-def hash_password(p: str) -> str:
-    return bcrypt.hashpw(p.encode(), bcrypt.gensalt(rounds=12)).decode()
-
-
-def verify_password(p: str, h: str) -> bool:
-    try:
-        return bcrypt.checkpw(p.encode(), h.encode())
-    except ValueError:
-        return False
-
-
-DUMMY_HASH = hash_password("dummy-password-000")
-
-
-def validate_password(p: str):
-    if len(p) < 10 or not re.search(r"[A-Za-z]", p) or not re.search(r"\d", p):
-        raise HTTPException(400, "La contraseña debe tener al menos 10 caracteres, con letras y números")
 
 
 def validate_email(e: str) -> str:
@@ -110,8 +89,6 @@ def get_current_user(request: Request,
         user = db.get(User, int(payload["sub"]))
     if not user or not user.active:
         raise HTTPException(401, "Usuario inexistente o inactivo")
-    if user.must_change_password and request.url.path not in PASSWORD_CHANGE_PATHS:
-        raise HTTPException(403, "Debe cambiar la contraseña antes de continuar")
     return user
 
 
@@ -130,14 +107,19 @@ def write_guard(request: Request, user: User = Depends(get_current_user)) -> Use
     return user
 
 
+def unusable_password() -> str:
+    """El ingreso es por código enviado por mail: la columna de contraseña queda con un valor imposible."""
+    return "!otp-only!" + secrets.token_hex(16)
+
+
 def bootstrap_admin():
+    """Crea el administrador inicial (ADMIN_EMAIL) si la base no tiene usuarios. Ingresa con código por mail."""
     email = os.getenv("ADMIN_EMAIL", "").strip().lower()
-    pwd = os.getenv("ADMIN_INITIAL_PASSWORD", "").strip()
-    if not email or not pwd:
+    if not EMAIL_RE.match(email):
         return
     with SessionLocal() as db:
         if db.scalar(select(func.count()).select_from(User)):
             return
         db.add(User(email=email, full_name="Administrador", role="admin",
-                    password_hash=hash_password(pwd), must_change_password=True))
+                    password_hash=unusable_password(), must_change_password=False))
         db.commit()

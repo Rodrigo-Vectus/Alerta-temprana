@@ -7,7 +7,6 @@ import { Loading, ToastProvider } from './components/ui'
 import AlertDetail from './pages/AlertDetail'
 import Alerts from './pages/Alerts'
 import Audit from './pages/Audit'
-import ChangePassword from './pages/ChangePassword'
 import Clients from './pages/Clients'
 import CommunicationEditor from './pages/CommunicationEditor'
 import Communications from './pages/Communications'
@@ -24,22 +23,15 @@ function RequireAuth({ children, admin = false }) {
   const { user, ready, isAdmin } = useAuth()
   if (!ready) return <div className="auth-wrap"><Loading /></div>
   if (!user) return <Navigate to="/login" replace />
-  if (user.must_change_password) return <Navigate to="/cambiar-clave" replace />
   if (admin && !isAdmin) return <Navigate to="/" replace />
   return children
 }
 
-function RequireUser({ children }) {
-  const { user, ready } = useAuth()
-  if (!ready) return <div className="auth-wrap"><Loading /></div>
-  return user ? children : <Navigate to="/login" replace />
-}
 
 function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
-      <Route path="/cambiar-clave" element={<RequireUser><ChangePassword /></RequireUser>} />
       <Route element={<RequireAuth><Layout /></RequireAuth>}>
         <Route index element={<Dashboard />} />
         <Route path="alertas" element={<Alerts />} />

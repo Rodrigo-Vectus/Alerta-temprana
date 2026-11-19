@@ -213,16 +213,10 @@ if [[ $SKIP_CONFIG -eq 0 ]]; then
 
   # ---------- 2. administrador ---------------------------------------------------
   title "2/5 · Usuario administrador"
-  info "Se crea solo la primera vez que arranca el sistema (si la base no tiene usuarios)."
+  info "Se crea la primera vez que arranca el sistema (si la base no tiene usuarios)."
   ask_email ADMIN_EMAIL "Correo del administrador" "$(env_get ADMIN_EMAIL)"
-  info "Contraseña inicial (mínimo 10 caracteres). Se pide cambiarla en el primer ingreso."
-  info "Dejala vacía para generar una al azar y mostrarla al final."
-  while true; do
-    ask_secret ADMIN_PASS "Contraseña inicial" 1 0
-    if [[ -z "$ADMIN_PASS" ]]; then ADMIN_PASS=$(randstr 16); ADMIN_PASS_GEN=1; break; fi
-    (( ${#ADMIN_PASS} >= 10 )) && { ADMIN_PASS_GEN=0; break; }
-    warn "Tiene que tener al menos 10 caracteres."
-  done
+  info "No hay contraseñas: para ingresar se escribe el correo y llega un código de 6 dígitos."
+  info "Solo los usuarios cargados en la plataforma reciben el código."
 
   # ---------- 3. SOC ------------------------------------------------------------
   title "3/5 · Equipo SOC"
@@ -286,7 +280,8 @@ if [[ $SKIP_CONFIG -eq 0 ]]; then
       [[ -n "$SMTP_USER" ]] && ask_secret SMTP_PASSWORD "Contraseña (no se muestra)"
       ask_email SMTP_FROM "Dirección del remitente" "${SMTP_USER}" ;;
     5)
-      warn "Sin correo configurado: el sistema detecta y arma comunicados, pero no envía nada." ;;
+      warn "Sin correo no llegan los códigos de ingreso ni los comunicados."
+      warn "Para entrar igual: docker compose exec backend python -m app.otp <tu-correo>" ;;
   esac
   SMTP_FROM_NAME="Vectus · Alertas de Seguridad"
   [[ $MAIL_OPT != 5 ]] && ask_required SMTP_FROM_NAME "Nombre visible del remitente" "$SMTP_FROM_NAME"
@@ -306,11 +301,10 @@ if [[ $SKIP_CONFIG -eq 0 ]]; then
   title "Resumen"
   row "Instalación" "$PROJECT" "Consola" "$PUBLIC_URL (puerto $HTTP_PORT)" \
     "Zona horaria" "$TZ_VAL" "Administrador" "$ADMIN_EMAIL" \
-    "Contraseña inicial" "$( [[ $ADMIN_PASS_GEN == 1 ]] && echo 'generada al azar (se muestra al final)' || mask "$ADMIN_PASS")" \
     "SOC" "$SOC_EMAILS"
   case $MAIL_OPT in
     2) row "Correo" "Microsoft Graph · $GRAPH_SENDER" "Client secret" "$(mask "$GRAPH_CLIENT_SECRET")" ;;
-    5) row "Correo" "sin configurar" ;;
+    5) row "Correo" "sin configurar (ingreso con: python -m app.otp)" ;;
     *) row "Correo" "$SMTP_HOST:$SMTP_PORT ($SMTP_SECURITY) · $SMTP_FROM" "Contraseña SMTP" "$(mask "$SMTP_PASSWORD")" ;;
   esac
   row "NVD API key" "$(mask "$NVD_API_KEY")" "Umbrales" "alerta ≥ $ALERT_THRESHOLD · monitoreo ≥ $MONITOR_THRESHOLD" \
@@ -345,9 +339,8 @@ POSTGRES_DB=$DB_NAME
 JWT_SECRET=$JWT
 JWT_EXPIRE_HOURS=8
 
-# --- Administrador inicial (la contraseña se borra de aquí tras el primer arranque) ---
+# --- Administrador inicial (ingresa con código por mail; se crea si la base no tiene usuarios) ---
 ADMIN_EMAIL=$ADMIN_EMAIL
-ADMIN_INITIAL_PASSWORD='$ADMIN_PASS'
 
 # --- Equipo SOC (destinatarios del aviso previo; editable desde Configuración) ---
 SOC_EMAILS=$SOC_EMAILS
@@ -403,12 +396,6 @@ compose ps --format 'table {{.Service}}\t{{.Status}}'
 DBU=$(env_get POSTGRES_USER); DBN=$(env_get POSTGRES_DB)
 sql() { compose exec -T db psql -U "$DBU" -d "$DBN" -tAc "$1" 2>/dev/null | tr -d '[:space:]'; }
 
-# Contraseña inicial: una vez creado el admin, se quita del .env
-if [[ -n "$(env_get ADMIN_INITIAL_PASSWORD)" ]] && [[ "$(sql 'select count(*) from users')" -ge 1 ]] 2>/dev/null; then
-  sed -i 's/^ADMIN_INITIAL_PASSWORD=.*/ADMIN_INITIAL_PASSWORD=/' .env
-  ok "Administrador creado; contraseña inicial quitada del .env"
-fi
-
 # Correo
 if [[ -n "$(env_get SMTP_HOST)$(env_get GRAPH_TENANT_ID)" ]]; then
   title "Correo"
@@ -447,11 +434,7 @@ fi
 title "Instalación completa"
 printf "  Consola:        ${B}%s${N}\n" "$(env_get PUBLIC_URL)"
 printf "  Usuario:        ${B}%s${N}\n" "$(env_get ADMIN_EMAIL)"
-if [[ "${ADMIN_PASS_GEN:-0}" == 1 ]]; then
-  printf "  Contraseña:     ${B}%s${N}   ${Y}← anotala ahora: no se vuelve a mostrar${N}\n" "$ADMIN_PASS"
-elif [[ -n "${ADMIN_PASS:-}" ]]; then
-  printf "  Contraseña:     la que ingresaste\n"
-fi
-info "En el primer ingreso la consola pide cambiar la contraseña."
+info "Para ingresar escribí tu correo: te llega un código de 6 dígitos."
+info "Si el correo no funciona: docker compose exec backend python -m app.otp $(env_get ADMIN_EMAIL)"
 info "Siguiente paso: cargar clientes y contactos en la sección Clientes."
 echo

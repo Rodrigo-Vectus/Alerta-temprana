@@ -26,4 +26,6 @@ MIGRATIONS = [
        WHERE contact_email IS NOT NULL AND trim(contact_email) <> ''
        ON CONFLICT (client_id, email) DO NOTHING""",
     "UPDATE clients SET contact_email = NULL WHERE contact_email IS NOT NULL",
+    # Ingreso por código (OTP): ya no hay contraseñas que cambiar
+    "UPDATE users SET must_change_password = FALSE WHERE must_change_password",
 ]

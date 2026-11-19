@@ -3,8 +3,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from app.auth import (ROLES, get_current_user, hash_password, now_utc, require_role,
-                      validate_email, validate_password)
+from app.auth import ROLES, get_current_user, now_utc, require_role, unusable_password, validate_email
 from app.db import SessionLocal
 from app.models import AuditLog, User
 
@@ -15,20 +14,17 @@ class UserIn(BaseModel):
     email: str
     full_name: str = ""
     role: str = "lector"
-    password: str
 
 
 class UserUpdate(BaseModel):
     full_name: str | None = None
     role: str | None = None
     active: bool | None = None
-    reset_password: str | None = None
 
 
 def _u(u: User):
     now = now_utc()
     return {"id": u.id, "email": u.email, "full_name": u.full_name, "role": u.role, "active": u.active,
-            "must_change_password": u.must_change_password,
             "locked": bool(u.locked_until and u.locked_until > now),
             "last_login_at": u.last_login_at, "created_at": u.created_at}
 
@@ -48,10 +44,9 @@ def list_users():
 def create_user(body: UserIn):
     email = validate_email(body.email)
     _check_role(body.role)
-    validate_password(body.password)
     with SessionLocal() as db:
         u = User(email=email, full_name=body.full_name, role=body.role,
-                 password_hash=hash_password(body.password), must_change_password=True)
+                 password_hash=unusable_password(), must_change_password=False)
         db.add(u)
         try:
             db.commit()
@@ -76,10 +71,6 @@ def update_user(user_id: int, body: UserUpdate, current: User = Depends(get_curr
             u.role = body.role
         if body.active is not None:
             u.active = body.active
-        if body.reset_password:
-            validate_password(body.reset_password)
-            u.password_hash = hash_password(body.reset_password)
-            u.must_change_password, u.failed_attempts, u.locked_until = True, 0, None
         db.commit()
         return _u(u)
 

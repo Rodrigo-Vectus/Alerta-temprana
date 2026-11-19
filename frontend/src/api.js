@@ -37,8 +37,7 @@ async function request(method, path, body, raw = false) {
     if (Array.isArray(msg)) msg = msg.map((d) => d.msg).join(' · ')
     if (res.status === 429) msg = 'Demasiados intentos. Esperá un minuto y volvé a probar.'
     const err = new ApiError(res.status, msg || `Error ${res.status}`)
-    if (res.status === 401 && path !== '/auth/login') window.dispatchEvent(new CustomEvent('vsat:unauthorized'))
-    if (res.status === 403 && msg?.includes('cambiar la contraseña')) window.dispatchEvent(new CustomEvent('vsat:must-change'))
+    if (res.status === 401 && !path.startsWith('/auth/')) window.dispatchEvent(new CustomEvent('vsat:unauthorized'))
     throw err
   }
   return data

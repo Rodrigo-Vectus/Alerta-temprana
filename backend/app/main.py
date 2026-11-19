@@ -17,11 +17,11 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Vectus SAT - Alerta Temprana", version="0.8.0",
+app = FastAPI(title="Vectus SAT - Alerta Temprana", version="0.9.0",
               docs_url="/api/docs", openapi_url="/api/openapi.json", lifespan=lifespan)
 
 AUDIT_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-AUDIT_SKIP = {"/api/auth/login", "/api/communications/preview"}  # login se audita adentro; preview no modifica nada
+AUDIT_SKIP = {"/api/auth/request-code", "/api/auth/verify-code", "/api/communications/preview"}  # el ingreso se audita adentro
 
 
 @app.middleware("http")

@@ -17,17 +17,16 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     const onUnauth = () => { setToken(null); setUser(null) }
-    const onMustChange = () => setUser((u) => (u ? { ...u, must_change_password: true } : u))
     window.addEventListener('vsat:unauthorized', onUnauth)
-    window.addEventListener('vsat:must-change', onMustChange)
     return () => {
       window.removeEventListener('vsat:unauthorized', onUnauth)
-      window.removeEventListener('vsat:must-change', onMustChange)
     }
   }, [])
 
-  const login = async (email, password) => {
-    const r = await api.post('/auth/login', { email, password })
+  // Ingreso por código enviado por mail
+  const requestCode = (email) => api.post('/auth/request-code', { email })
+  const verifyCode = async (email, code) => {
+    const r = await api.post('/auth/verify-code', { email, code })
     setToken(r.access_token)
     setUser(r.user)
     return r.user
@@ -36,7 +35,7 @@ export function AuthProvider({ children }) {
   const logout = () => { setToken(null); setUser(null) }
 
   const value = {
-    user, ready, login, logout, reload: loadMe,
+    user, ready, requestCode, verifyCode, logout, reload: loadMe,
     canWrite: user && ['admin', 'analista'].includes(user.role),
     isAdmin: user?.role === 'admin',
   }

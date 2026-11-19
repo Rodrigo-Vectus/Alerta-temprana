@@ -157,8 +157,8 @@ def _smtp_connect(c):
     return server
 
 
-def check(send_to: str | None = None) -> str:
-    """Valida las credenciales del proveedor configurado y, opcionalmente, manda un mail simple."""
+def send_simple(to: str, subject: str, text: str, html: str | None = None):
+    """Mail corto (códigos de ingreso, pruebas): texto + HTML opcional, sin adjuntos."""
     if not is_configured():
         raise RuntimeError("El correo no está configurado en el .env")
     if provider() == "graph":
@@ -169,31 +169,52 @@ def check(send_to: str | None = None) -> str:
                 "scope": "https://graph.microsoft.com/.default", "grant_type": "client_credentials"})
             if tok.status_code != 200:
                 raise RuntimeError(f"Microsoft rechazó las credenciales de la app ({tok.status_code}): {tok.text[:200]}")
-            if send_to:
-                r = client.post(f"https://graph.microsoft.com/v1.0/users/{g['sender']}/sendMail",
-                                headers={"Authorization": f"Bearer {tok.json()['access_token']}"},
-                                json={"message": {"subject": "Vectus SAT · prueba de configuración",
-                                                  "body": {"contentType": "Text", "content": "El envío de correo de Vectus SAT funciona."},
-                                                  "toRecipients": [{"emailAddress": {"address": send_to}}]},
-                                      "saveToSentItems": False})
-                if r.status_code != 202:
-                    raise RuntimeError(f"Microsoft Graph no aceptó el envío ({r.status_code}): {r.text[:200]}")
-        return f"Microsoft Graph OK ({g['sender']})" + (f" · prueba enviada a {send_to}" if send_to else "")
+            r = client.post(f"https://graph.microsoft.com/v1.0/users/{g['sender']}/sendMail",
+                            headers={"Authorization": f"Bearer {tok.json()['access_token']}"},
+                            json={"message": {"subject": subject,
+                                              "body": {"contentType": "HTML" if html else "Text", "content": html or text},
+                                              "toRecipients": [{"emailAddress": {"address": to}}]},
+                                  "saveToSentItems": False})
+            if r.status_code != 202:
+                raise RuntimeError(f"Microsoft Graph no aceptó el envío ({r.status_code}): {r.text[:200]}")
+        return
     c = config()
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = formataddr((c["from_name"], c["from_addr"]))
+    msg["To"] = to
+    msg["Message-ID"] = make_msgid(domain=c["from_addr"].split("@")[-1] or "vectus.la")
+    msg.set_content(text)
+    if html:
+        msg.add_alternative(html, subtype="html")
     server = _smtp_connect(c)
     try:
-        if send_to:
-            msg = EmailMessage()
-            msg["Subject"] = "Vectus SAT · prueba de configuración"
-            msg["From"] = formataddr((c["from_name"], c["from_addr"]))
-            msg["To"] = send_to
-            msg.set_content("El envío de correo de Vectus SAT funciona.")
-            server.send_message(msg)
+        server.send_message(msg)
     finally:
         try:
             server.quit()
         except Exception:
             pass
+
+
+def check(send_to: str | None = None) -> str:
+    """Valida las credenciales del proveedor configurado y, opcionalmente, manda un mail simple."""
+    if not is_configured():
+        raise RuntimeError("El correo no está configurado en el .env")
+    if send_to:
+        send_simple(send_to, "Vectus SAT · prueba de configuración", "El envío de correo de Vectus SAT funciona.")
+    elif provider() == "graph":
+        g = graph_config()
+        tok = httpx.post(f"https://login.microsoftonline.com/{g['tenant']}/oauth2/v2.0/token", timeout=30, data={
+            "client_id": g["client_id"], "client_secret": g["client_secret"],
+            "scope": "https://graph.microsoft.com/.default", "grant_type": "client_credentials"})
+        if tok.status_code != 200:
+            raise RuntimeError(f"Microsoft rechazó las credenciales de la app ({tok.status_code}): {tok.text[:200]}")
+    else:
+        _smtp_connect(config()).quit()
+    if provider() == "graph":
+        return f"Microsoft Graph OK ({graph_config()['sender']})" + (f" · prueba enviada a {send_to}" if send_to else "")
+    c = config()
     return f"SMTP OK ({c['host']}:{c['port']} como {c['user'] or c['from_addr']})" + (f" · prueba enviada a {send_to}" if send_to else "")
 
 
