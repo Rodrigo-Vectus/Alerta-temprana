@@ -16,6 +16,7 @@ class SettingsIn(BaseModel):
     min_score: int | None = None
     soc_emails: list[str] | None = None
     attach_docx: bool | None = None
+    soc_playbook_mail: bool | None = None
     public_url: str | None = None
 
 

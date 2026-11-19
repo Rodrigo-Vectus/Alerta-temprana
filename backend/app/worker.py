@@ -6,6 +6,7 @@ from app.collectors.kev import run_once
 from app.comms.automation import dispatch_due, schedule_for_results
 from app.db import SessionLocal, init_db
 from app.scoring import process_pending, refresh_incomplete, seed_watchlist
+from app.comms.soc_brief import notify_new_cases
 from app.usecases import ensure_for_communications
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [worker] %(levelname)s %(message)s")
@@ -47,6 +48,12 @@ def main():
                 logging.info("Envío: %s", r)
         except Exception:
             logging.exception("Error despachando comunicados")
+        try:
+            pb = notify_new_cases()
+            if pb:
+                logging.info("Playbook enviado al SOC: %s", pb)
+        except Exception:
+            logging.exception("Error enviando playbooks al SOC")
         time.sleep(TICK)
 
 

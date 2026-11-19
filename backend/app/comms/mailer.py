@@ -157,8 +157,11 @@ def _smtp_connect(c):
     return server
 
 
-def send_simple(to: str, subject: str, text: str, html: str | None = None):
-    """Mail corto (códigos de ingreso, pruebas): texto + HTML opcional, sin adjuntos."""
+def send_simple(to: str | list[str], subject: str, text: str, html: str | None = None,
+                attachments: list[tuple[str, bytes, str]] | None = None):
+    """Mail propio (códigos de ingreso, pruebas, playbook del SOC): texto + HTML opcional y adjuntos."""
+    to_list = [to] if isinstance(to, str) else list(to)
+    attachments = attachments or []
     if not is_configured():
         raise RuntimeError("El correo no está configurado en el .env")
     if provider() == "graph":
@@ -173,7 +176,10 @@ def send_simple(to: str, subject: str, text: str, html: str | None = None):
                             headers={"Authorization": f"Bearer {tok.json()['access_token']}"},
                             json={"message": {"subject": subject,
                                               "body": {"contentType": "HTML" if html else "Text", "content": html or text},
-                                              "toRecipients": [{"emailAddress": {"address": to}}]},
+                                              "toRecipients": [{"emailAddress": {"address": t}} for t in to_list],
+                                              "attachments": [{"@odata.type": "#microsoft.graph.fileAttachment", "name": n,
+                                                               "contentType": m, "contentBytes": base64.b64encode(d).decode()}
+                                                              for n, d, m in attachments]},
                                   "saveToSentItems": False})
             if r.status_code != 202:
                 raise RuntimeError(f"Microsoft Graph no aceptó el envío ({r.status_code}): {r.text[:200]}")
@@ -182,11 +188,14 @@ def send_simple(to: str, subject: str, text: str, html: str | None = None):
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = formataddr((c["from_name"], c["from_addr"]))
-    msg["To"] = to
+    msg["To"] = ", ".join(to_list)
     msg["Message-ID"] = make_msgid(domain=c["from_addr"].split("@")[-1] or "vectus.la")
     msg.set_content(text)
     if html:
         msg.add_alternative(html, subtype="html")
+    for filename, data, mime in attachments:
+        maintype, subtype = mime.split("/", 1)
+        msg.add_attachment(data, maintype=maintype, subtype=subtype, filename=filename)
     server = _smtp_connect(c)
     try:
         server.send_message(msg)

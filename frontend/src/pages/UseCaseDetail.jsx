@@ -3,15 +3,15 @@ import { Link, useParams } from 'react-router-dom'
 import { api, download } from '../api'
 import { useAuth } from '../auth'
 import { usePageHeader } from '../components/Layout'
-import { IconArrowLeft, IconRefresh } from '../components/icons'
-import { ErrorBox, fmtDateTime, Loading, Modal, Score, StatusBadge, useFetch, useToast } from '../components/ui'
+import { IconArrowLeft, IconMail, IconRefresh } from '../components/icons'
+import { EmailChips, ErrorBox, fmtDateTime, Loading, Modal, Score, StatusBadge, useFetch, useToast } from '../components/ui'
 import { UcBadge } from './UseCases'
 
 const EXPOSURE = [['desconocido', 'Sin confirmar'], ['expuesto', 'Expuesto'], ['no_expuesto', 'No expuesto']]
 const PATCH = [['pendiente', 'Pendiente'], ['en_curso', 'En curso'], ['parcheado', 'Parcheado'], ['no_aplica', 'No aplica']]
 const IOC = [['no_revisado', 'No revisado'], ['sin_hallazgos', 'Sin hallazgos'], ['con_hallazgos', 'Con hallazgos']]
 const EVENTS = {
-  caso_creado: 'Caso creado', paso_completado: 'Paso completado', paso_reabierto: 'Paso reabierto',
+  caso_creado: 'Caso creado', playbook_enviado: 'Playbook enviado por mail', paso_completado: 'Paso completado', paso_reabierto: 'Paso reabierto',
   seguimiento_cliente: 'Seguimiento actualizado', playbook_actualizado: 'Playbook actualizado', clientes_agregados: 'Clientes agregados', caso_cerrado: 'Caso cerrado', caso_reabierto: 'Caso reabierto',
 }
 
@@ -145,6 +145,8 @@ export default function UseCaseDetail() {
   const [tab, setTab] = useState('proceso')
   const [closing, setClosing] = useState(null)
   const [notes, setNotes] = useState({})
+  const [brief, setBrief] = useState(null)
+  const [briefBusy, setBriefBusy] = useState(false)
   usePageHeader(uc ? `${uc.code} · ${uc.cve_id}` : code, uc ? `${uc.vendor} ${uc.product}` : 'Caso de uso SOC')
 
   if (loading && !uc) return <Loading />
@@ -159,6 +161,20 @@ export default function UseCaseDetail() {
   const call = async (fn, msg) => { try { setData(await fn()); if (msg) toast(msg) } catch (e) { toast(e.message, 'err') } }
   const locked = !canWrite || uc.status === 'cerrado'
   const pct = uc.progress.total ? Math.round((uc.progress.done / uc.progress.total) * 100) : 0
+  const openBrief = async () => {
+    let to = []
+    try { to = (await api.get('/settings')).soc_emails || [] } catch { /* sin acceso */ }
+    setBrief({ to })
+  }
+  const sendBrief = async () => {
+    setBriefBusy(true)
+    try {
+      const r = await api.post(`/usecases/${code}/send-playbook`, { to: brief.to })
+      toast(`Playbook enviado a ${r.to.join(', ')}`); setBrief(null)
+      setData(await api.get(`/usecases/${code}`))
+    } catch (e) { toast(e.message, 'err') }
+    setBriefBusy(false)
+  }
   const setRow = (r, body, msg) => call(() => api.patch(`/usecases/${code}/clients/${r.id}`, body), msg)
 
   return (
@@ -180,9 +196,12 @@ export default function UseCaseDetail() {
             <span className="mono dim" style={{ fontSize: 11 }}>Playbook {uc.progress.done}/{uc.progress.total} · Clientes parcheados {uc.clients.patched}/{uc.clients.total}</span>
           </div>
         </div>
-        {canWrite && (uc.status === 'cerrado'
-          ? <button className="btn btn-sm btn-secondary" onClick={() => call(() => api.post(`/usecases/${code}/reopen`), 'Caso reabierto')}>Reabrir caso</button>
-          : <button className="btn btn-sm btn-success" onClick={() => setClosing('')}>Cerrar caso</button>)}
+        {canWrite && <div className="row wrap" style={{ justifyContent: 'flex-end', gap: 8 }}>
+          <button className="btn btn-sm btn-secondary" onClick={openBrief} title="Mail técnico para el equipo SOC: qué hacer, plazos, checklist y runbook adjunto"><IconMail />Enviar playbook por mail</button>
+          {uc.status === 'cerrado'
+            ? <button className="btn btn-sm btn-secondary" onClick={() => call(() => api.post(`/usecases/${code}/reopen`), 'Caso reabierto')}>Reabrir caso</button>
+            : <button className="btn btn-sm btn-success" onClick={() => setClosing('')}>Cerrar caso</button>}
+        </div>}
       </div>
 
       <div className="toolbar">
@@ -284,6 +303,15 @@ export default function UseCaseDetail() {
           </div>
           {uc.closure_notes && <div className="alert-box ok" style={{ marginTop: 16 }}><b>Notas de cierre:</b> {uc.closure_notes}</div>}
         </div>
+      )}
+
+      {brief && (
+        <Modal title="Enviar playbook por mail" desc="Mail técnico para el equipo: qué hacer en cada etapa con responsables y plazos, el checklist del playbook, cómo cortar el ataque y el runbook completo adjunto. Es de uso interno: no lo mandes a clientes."
+          onClose={() => setBrief(null)}
+          actions={<><button className="btn btn-secondary" onClick={() => setBrief(null)}>Cancelar</button>
+            <button className="btn btn-primary" onClick={sendBrief} disabled={briefBusy || brief.to.length === 0}>{briefBusy ? 'Enviando…' : 'Enviar'}</button></>}>
+          <div className="fg"><label>Destinatarios</label><EmailChips value={brief.to} onChange={(to) => setBrief({ ...brief, to })} /></div>
+        </Modal>
       )}
 
       {closing !== null && (

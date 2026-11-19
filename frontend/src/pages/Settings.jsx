@@ -25,7 +25,7 @@ export default function Settings() {
     try {
       const r = await api.put('/settings', {
         auto_send: form.auto_send, delay_minutes: Number(form.delay_minutes), min_score: Number(form.min_score),
-        soc_emails: form.soc_emails, attach_docx: form.attach_docx, public_url: form.public_url,
+        soc_emails: form.soc_emails, attach_docx: form.attach_docx, soc_playbook_mail: form.soc_playbook_mail, public_url: form.public_url,
       })
       setData(r); toast('Configuración guardada')
     } catch (e) { toast(e.message, 'err') }
@@ -75,6 +75,7 @@ export default function Settings() {
           </div>
           <div className="fg full">
             <label className="check"><input type="checkbox" checked={form.attach_docx} disabled={!isAdmin} onChange={(e) => set('attach_docx')(e.target.checked)} />Adjuntar también el DOCX editable (además del PDF)</label>
+            <label className="check"><input type="checkbox" checked={form.soc_playbook_mail ?? true} disabled={!isAdmin} onChange={(e) => set('soc_playbook_mail')(e.target.checked)} />Enviar al SOC el playbook técnico de cada caso nuevo (qué hacer, plazos, checklist y runbook adjunto)</label>
           </div>
         </div>
         {isAdmin && <div className="row" style={{ marginTop: 18 }}><span className="spacer" /><button className="btn btn-primary" onClick={save} disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button></div>}

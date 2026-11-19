@@ -45,6 +45,7 @@ y avisa a los clientes con el formato Vectus, sin intervención manual.**
 | ⏱️ **Ventana de revisión del SOC** | El SOC recibe el comunicado primero y tiene 30 minutos para revisarlo, editarlo o cancelarlo antes de que salga. |
 | 🛡️ **Protección Fortinet específica** | Consulta **FortiGuard** y agrega las firmas reales de IPS, antivirus, EDR y outbreak de cada CVE, más recomendaciones de hardening. |
 | 🧭 **Caso de uso SOC por alerta** | Genera `CU-SOC-NNN` con el proceso SOC (responsables y plazos), el flujo del ataque (MITRE ATT&CK), el playbook y un **runbook técnico** con consultas para Splunk, Sentinel, Wazuh, FortiSIEM, QRadar, Elastic, FortiGate, Palo Alto, Check Point, Defender y más. |
+| 📨 **Playbook por mail al SOC** | Por cada caso nuevo, el equipo recibe un mail técnico con qué hacer en cada etapa (responsable y plazo), el checklist, cómo cortar el ataque y el runbook completo adjunto. También se reenvía desde el caso. |
 | 🖥️ **Consola web** | Panel, alertas, comunicados, casos de uso, clientes y contactos, usuarios con roles, auditoría y configuración. Modo oscuro y claro. |
 | 🔑 **Ingreso sin contraseña** | Se entra con un código de 6 dígitos que llega por mail. Solo los usuarios cargados lo reciben; la pantalla responde igual para cualquier correo. |
 

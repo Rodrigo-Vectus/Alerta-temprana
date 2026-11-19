@@ -32,6 +32,10 @@ class CloseIn(BaseModel):
     notes: str = ""
 
 
+class BriefIn(BaseModel):
+    to: list[str] = []
+
+
 def _w(user):
     if user.role not in WRITE_ROLES:
         raise HTTPException(403, "Su rol es de solo lectura")
@@ -218,6 +222,31 @@ def runbook_md(code: str):
                               runbook(k, db.get(CveEnrichment, a.cve_id), fg, a, _refs(comm, k)))
         return Response(md, media_type="text/markdown; charset=utf-8",
                         headers={"Content-Disposition": f'attachment; filename="Runbook {uc.code} {a.cve_id}.md"'})
+
+
+@router.post("/{code}/send-playbook")
+def send_playbook(code: str, body: BriefIn, user: User = Depends(get_current_user)):
+    """Envía por mail el playbook técnico del caso (por defecto, a los correos del SOC de Configuración)."""
+    import re
+
+    from app.comms import mailer, soc_brief
+    from app.settings import get_settings
+    _w(user)
+    with SessionLocal() as db:
+        uc, a, k = _load(db, code)
+        to = [t.strip().lower() for t in body.to if t.strip()] or get_settings(db).get("soc_emails") or []
+        bad = [t for t in to if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", t)]
+        if not to or bad:
+            raise HTTPException(400, "Indicá al menos un correo válido" + (f": {', '.join(bad)}" if bad else ""))
+        if not mailer.is_configured():
+            raise HTTPException(400, "El correo no está configurado en el servidor")
+        try:
+            soc_brief.send(db, uc, to, user.email)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(502, f"No se pudo enviar el mail: {exc}") from exc
+        uc.soc_notified_at = uc.soc_notified_at or datetime.now(timezone.utc)
+        db.commit()
+        return {"ok": True, "to": to}
 
 
 @router.post("/{code}/rebuild-playbook")

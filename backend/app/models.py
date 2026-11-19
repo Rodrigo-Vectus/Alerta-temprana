@@ -230,6 +230,7 @@ class UseCase(Base):
     created_by: Mapped[str | None] = mapped_column(String(255))
     closed_by: Mapped[str | None] = mapped_column(String(255))
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    soc_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))   # playbook enviado al SOC
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

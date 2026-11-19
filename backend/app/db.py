@@ -28,4 +28,12 @@ MIGRATIONS = [
     "UPDATE clients SET contact_email = NULL WHERE contact_email IS NOT NULL",
     # Ingreso por código (OTP): ya no hay contraseñas que cambiar
     "UPDATE users SET must_change_password = FALSE WHERE must_change_password",
+    # Playbook por mail al SOC: los casos que ya existían se marcan como notificados (no se reenvían en masa)
+    """DO $$ BEGIN
+         IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'use_cases' AND column_name = 'soc_notified_at') THEN
+           ALTER TABLE use_cases ADD COLUMN soc_notified_at TIMESTAMPTZ;
+           UPDATE use_cases SET soc_notified_at = now();
+         END IF;
+       END $$""",
 ]

@@ -10,6 +10,7 @@ DEFAULTS = {
     "min_score": int(os.getenv("ALERT_THRESHOLD", "60")),
     "soc_emails": [e.strip() for e in os.getenv("SOC_EMAILS", os.getenv("ADMIN_EMAIL", "")).split(",") if e.strip()],
     "attach_docx": False,                    # además del PDF, adjuntar el DOCX
+    "soc_playbook_mail": True,               # mandar al SOC el playbook técnico de cada caso nuevo
     "public_url": os.getenv("PUBLIC_URL", "http://192.168.44.129").rstrip("/"),
 }
 
