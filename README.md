@@ -271,11 +271,12 @@ Todos los comandos se ejecutan desde la carpeta del proyecto (`cd /opt/vectus-sa
 
 ```bash
 cd /opt/vectus-sat
-git pull
-docker compose up -d --build
+./update.sh                      # baja lo último de GitHub
+./update.sh /tmp/cambio.bundle   # o aplica un bundle y lo sube a GitHub
+./update.sh --todo               # reconstruye todo (por ejemplo, si algo quedó raro)
 ```
 
-Los cambios de base de datos se aplican solos al arrancar.
+`update.sh` mira qué archivos cambiaron y reinicia solo lo necesario: un cambio en la API recompila solo la API (el worker usa la misma imagen), un cambio en la consola recompila solo la consola, y un cambio en la documentación no reinicia nada. Al final verifica que la API responda e indica cuánto tardó. Los cambios de base de datos se aplican solos al arrancar.
 
 ### Apagar y encender el servidor
 
@@ -360,6 +361,7 @@ Solo pueden ingresar los correos cargados en **Administración › Usuarios**. A
 ```
 .
 ├── install.sh                 # instalador interactivo
+├── update.sh                  # actualización (solo reinicia lo que cambió)
 ├── docker-compose.yml
 ├── .env.example               # variables documentadas (el .env real no se versiona)
 ├── nginx/default.conf         # proxy, límite de login y cabeceras

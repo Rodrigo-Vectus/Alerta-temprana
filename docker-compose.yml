@@ -23,6 +23,7 @@ services:
 
   backend:
     build: ./backend
+    image: ${COMPOSE_PROJECT_NAME:-vectus-sat}-backend
     restart: unless-stopped
     <<: *app-env
     volumes:
@@ -32,7 +33,9 @@ services:
         condition: service_healthy
 
   worker:
+    # Misma imagen que la API: se compila una sola vez
     build: ./backend
+    image: ${COMPOSE_PROJECT_NAME:-vectus-sat}-backend
     restart: unless-stopped
     command: python -m app.worker
     <<: *app-env
