@@ -236,7 +236,9 @@ def _apply_fortiguard(cards, fg, cve, short):
         if fg.get("endpoint"):
             parts.append(f"FortiClient EMS detecta los equipos vulnerables con la firma de vulnerabilidad {_names(fg['endpoint'], 1)}, para priorizar el parcheo")
         if fg.get("virus"):
-            parts.append(f"el antivirus de FortiGuard (FortiEDR, FortiGate y FortiMail) detecta el malware usado en la campaña, como {_names(fg['virus'])}")
+            # primero las firmas de ransomware: son las que más le dicen al cliente
+            vir = sorted(fg["virus"], key=lambda x: 0 if "ransom" in x["name"].lower() else 1)
+            parts.append(f"el antivirus de FortiGuard (FortiEDR, FortiGate y FortiMail) detecta el malware usado en la campaña, como {_names(vir)}")
         if parts:
             text = "; ".join(parts)
             by["fortiedr"].update(included=True, _s=7, product="FortiClient EMS / FortiEDR", text=text[0].upper() + text[1:] + ".")

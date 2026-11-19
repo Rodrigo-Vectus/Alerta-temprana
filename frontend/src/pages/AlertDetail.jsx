@@ -25,7 +25,7 @@ const EVENT_LABEL = {
   nueva_en_kev: 'Nueva en CISA KEV', actualizada_en_kev: 'Actualizada en CISA KEV', recalculo: 'Puntaje recalculado',
   reintento_nvd: 'Datos de NVD completados', cambio_estado: 'Cambio de estado',
   comunicado_generado: 'Comunicado generado', comunicado_regenerado: 'Comunicado regenerado',
-  comunicado_programado: 'Envío automático programado', envio_cancelado: 'Envío cancelado', envio_manual: 'Envío a clientes solicitado',
+  comunicado_programado: 'Envío automático programado', comunicado_eliminado: 'Comunicado eliminado', envio_cancelado: 'Envío cancelado', envio_manual: 'Envío a clientes solicitado',
 }
 
 export default function AlertDetail() {

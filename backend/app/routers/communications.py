@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from app.auth import WRITE_ROLES, get_current_user
+from app.auth import WRITE_ROLES, get_current_user, require_role
 from app.comms import mailer
 from app.comms.automation import recipients
 from app.comms.content import build_content
@@ -203,6 +203,22 @@ def cancel(code: str, user: User = Depends(get_current_user)):
         _alert_history(alert, "envio_cancelado", user, comentario=f"{comm.code} cancelado antes del envío")
         db.commit()
         return _full(comm, alert, kev)
+
+
+@router.delete("/{code}", status_code=204)
+def delete_communication(code: str, user: User = Depends(require_role("admin"))):
+    """Solo administradores. Borra el comunicado para poder regenerarlo desde la alerta.
+    Queda constancia en el historial de la alerta (y en la auditoría) de qué se borró y a cuántos se había enviado."""
+    with SessionLocal() as db:
+        comm, alert, _ = _load(db, code)
+        sent_ok = sorted({to for s in (comm.sends or []) if s.get("tipo") == "clientes" and s.get("ok") for to in s["to"]})
+        clients = sorted({s.get("cliente") for s in (comm.sends or []) if s.get("tipo") == "clientes" and s.get("ok") and s.get("cliente")})
+        _alert_history(alert, "comunicado_eliminado", user,
+                       comentario=f"{comm.code} eliminado (estado: {comm.status}"
+                                  + (f", se había enviado a {len(sent_ok)} contacto(s) de {len(clients)} cliente(s): {', '.join(clients)}" if sent_ok else "")
+                                  + ")")
+        db.delete(comm)
+        db.commit()
 
 
 # ------------------------------------------------------------------ salidas

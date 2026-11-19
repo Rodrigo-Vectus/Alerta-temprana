@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, download } from '../api'
 import { useAuth } from '../auth'
 import { usePageHeader } from '../components/Layout'
@@ -63,7 +63,9 @@ const TECH_LABELS = { cve: 'CVE', vendor: 'Fabricante', product: 'Producto', cvs
 // ---------- Página ----------
 export default function CommunicationEditor() {
   const { code } = useParams()
-  const { user, canWrite } = useAuth()
+  const { user, canWrite, isAdmin } = useAuth()
+  const navigate = useNavigate()
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const toast = useToast()
   const { data, error, loading, setData } = useFetch(() => api.get(`/communications/${code}`), [code])
   const mail = useFetch(() => api.get('/communications/mail-status'), [])
@@ -122,6 +124,11 @@ export default function CommunicationEditor() {
     if (dirty) await save()
     await run('now', async () => { setData(await api.post(`/communications/${code}/send-now`)); setConfirmSend(false) }, 'Envío en curso: sale en menos de un minuto')
   }
+  const remove = () => run('del', async () => {
+    await api.del(`/communications/${code}`)
+    setConfirmDelete(false)
+    navigate(`/alertas/${data.alert_code}`)
+  }, 'Comunicado eliminado. Podés generarlo de nuevo desde la alerta.')
   const cancelSend = () => run('cancel', async () => setData(await api.post(`/communications/${code}/cancel`)), 'Envío automático cancelado')
   const regenerate = () => run('regen', async () => { setData(await api.post(`/communications/from-alert/${data.alert_code}?regenerate=true`)); setConfirmRegen(false) }, 'Contenido regenerado desde la plantilla')
   const loadPdf = () => run('pdf', async () => {
@@ -166,6 +173,7 @@ export default function CommunicationEditor() {
             {['borrador', 'aprobado', 'cancelado', 'error'].includes(data.status) && <button className="btn btn-sm btn-success" onClick={() => setConfirmSend(true)} disabled={!!busy}>Enviar a clientes</button>}
             {data.status === 'enviado' && rcpt.data?.some((r) => !r.sent) && <button className="btn btn-sm btn-secondary" onClick={() => setConfirmSend(true)} disabled={!!busy}>Enviar a pendientes</button>}
             <button className="btn btn-sm btn-secondary" onClick={() => setSendModal({ to: user.email, docx: false })} disabled={!!busy}><IconMail />Enviar prueba</button>
+            {isAdmin && <button className="btn btn-sm btn-danger" onClick={() => setConfirmDelete(true)} disabled={!!busy} title="Solo administradores"><IconTrash />Eliminar</button>}
           </div>
         )}
       </div>
@@ -371,6 +379,16 @@ export default function CommunicationEditor() {
           </Modal>
         )
       })()}
+
+      {confirmDelete && (
+        <Modal title={`Eliminar ${data.code}`}
+          desc={data.status === 'enviado'
+            ? 'Este comunicado ya fue enviado. Se borra junto con su historial de envíos; en el historial de la alerta y en la auditoría queda constancia de que existió y a qué clientes se envió. Después podés generarlo de nuevo desde la alerta.'
+            : 'Se borra el comunicado' + (data.status === 'programado' ? ' y se cancela el envío programado' : '') + '. Después podés generarlo de nuevo desde la alerta.'}
+          onClose={() => setConfirmDelete(false)}
+          actions={<><button className="btn btn-secondary" onClick={() => setConfirmDelete(false)}>Cancelar</button>
+            <button className="btn btn-danger" onClick={remove} disabled={!!busy}>{busy === 'del' ? 'Eliminando…' : 'Eliminar'}</button></>} />
+      )}
 
       {confirmRegen && (
         <Modal title="Regenerar desde la plantilla" desc="Se descartan las ediciones y se vuelve a armar todo el contenido con los datos actuales de CISA y NVD. Si estaba programado, sigue programado para la misma hora."
