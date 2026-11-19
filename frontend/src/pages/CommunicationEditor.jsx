@@ -109,6 +109,12 @@ export default function CommunicationEditor() {
     return () => clearInterval(t)
   }, [data?.status, code, setData])
 
+  // Contador de segundos mientras hay una operación en curso (antes de cualquier return)
+  useEffect(() => {
+    if (!busy) { setElapsed(0); return undefined }
+    const t = setInterval(() => setElapsed((e) => e + 1), 1000)
+    return () => clearInterval(t)
+  }, [busy])
   if (loading && !data) return <Loading />
   if (error) return <><Link to="/comunicados" className="back"><IconArrowLeft width={14} />Volver</Link><ErrorBox error={error} /></>
   if (!content) return <Loading />
@@ -116,11 +122,6 @@ export default function CommunicationEditor() {
   const locked = !canWrite || data.status === 'enviado'
   const set = (k) => (v) => { setContent((c) => ({ ...c, [k]: v })); setDirty(true) }
 
-  useEffect(() => {
-    if (!busy) { setElapsed(0); return undefined }
-    const t = setInterval(() => setElapsed((e) => e + 1), 1000)
-    return () => clearInterval(t)
-  }, [busy])
   const run = async (key, fn, okMsg) => {
     setBusy(key)
     try { const r = await fn(); if (okMsg) toast(okMsg); return r } catch (e) { toast(e.message, 'err') } finally { setBusy('') }
