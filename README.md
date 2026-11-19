@@ -217,6 +217,8 @@ Después:
 
 Al final muestra la URL y el usuario. En el primer ingreso la consola pide cambiar la contraseña. El siguiente paso es cargar **clientes y contactos** en la sección *Clientes*.
 
+> Si en el servidor ya hay otra instalación, el instalador no deja reusar su nombre y propone otro puerto libre, así no se pisan.
+>
 > Si volvés a ejecutar `./install.sh` con un `.env` existente, podés **mantenerlo** y solo actualizar los contenedores, o **reconfigurar**. Al reconfigurar se conservan las claves de la base y se guarda una copia `.env.bak.*`.
 
 <details>
@@ -310,7 +312,7 @@ Guardá también una copia del `.env` en un lugar seguro, porque tiene las clave
 ```bash
 git clone https://github.com/Rodrigo-Vectus/Alerta-temprana.git /opt/vectus-sat-prueba
 cd /opt/vectus-sat-prueba
-./install.sh        # nombre: vectus-sat-prueba · puerto: 8080
+./install.sh        # propone solo el nombre "vectus-sat-prueba" y el puerto 8080
 # ... probar en http://<ip>:8080 ...
 docker compose down && cd / && rm -rf /opt/vectus-sat-prueba   # eliminarla
 ```

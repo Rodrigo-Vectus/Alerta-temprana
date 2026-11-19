@@ -106,6 +106,20 @@ env_get() { [[ -f .env ]] && grep -E "^$1=" .env | tail -1 | cut -d= -f2- | sed 
 
 compose() { docker compose "$@"; }
 
+# Carpeta desde la que corre una instalación con ese nombre de proyecto (vacío si no existe)
+project_dir() {
+  docker ps -a --filter "label=com.docker.compose.project=$1" \
+    --format '{{.Label "com.docker.compose.project.working_dir"}}' 2>/dev/null | sort -u | head -1
+}
+
+# port_busy PUERTO PROYECTO -> 0 si lo usa algo que no es esta misma instalación
+port_busy() {
+  command -v ss >/dev/null 2>&1 || return 1
+  ss -ltnH "sport = :$1" 2>/dev/null | grep -q . || return 1
+  docker ps --filter "label=com.docker.compose.project=$2" --format '{{.Ports}}' 2>/dev/null | grep -q ":$1->" && return 1
+  return 0
+}
+
 # row "etiqueta" "valor" ...  (alinea bien aunque haya tildes)
 row() {
   local n
@@ -160,15 +174,30 @@ if [[ $SKIP_CONFIG -eq 0 ]]; then
   # ---------- 1. instancia ------------------------------------------------------
   title "1/5 · Instancia"
   info "Nombre interno de los contenedores. Cambialo solo si vas a tener más de una instalación en el mismo servidor."
-  ask_required PROJECT "Nombre de la instalación" "$(env_get COMPOSE_PROJECT_NAME | grep . || echo vectus-sat)"
-  PROJECT=$(echo "$PROJECT" | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9_-')
-
+  DEF_PROJECT=$(env_get COMPOSE_PROJECT_NAME)
+  [[ -z "$DEF_PROJECT" ]] && DEF_PROJECT=$(basename "$PWD" | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9_-')
+  [[ -z "$DEF_PROJECT" ]] && DEF_PROJECT=vectus-sat
   while true; do
-    ask_required HTTP_PORT "Puerto web de la consola" "$(env_get HTTP_PORT | grep . || echo 80)"
+    ask_required PROJECT "Nombre de la instalación" "$DEF_PROJECT"
+    PROJECT=$(echo "$PROJECT" | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9_-')
+    OTHER=$(project_dir "$PROJECT")
+    if [[ -n "$OTHER" && "$OTHER" != "$PWD" ]]; then
+      fail "El nombre '$PROJECT' ya lo usa la instalación de $OTHER."
+      info "Si siguieras, sus contenedores se reemplazarían por los de esta carpeta. Elegí otro nombre."
+      DEF_PROJECT="$(basename "$PWD" | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9_-')"
+      [[ "$DEF_PROJECT" == "$PROJECT" ]] && DEF_PROJECT="$PROJECT-2"
+      continue
+    fi
+    break
+  done
+
+  DEF_PORT=$(env_get HTTP_PORT); DEF_PORT=${DEF_PORT:-80}
+  while port_busy "$DEF_PORT" "$PROJECT"; do DEF_PORT=$(( DEF_PORT == 80 ? 8080 : DEF_PORT + 1 )); done
+  while true; do
+    ask_required HTTP_PORT "Puerto web de la consola" "$DEF_PORT"
     [[ "$HTTP_PORT" =~ ^[0-9]+$ ]] && (( HTTP_PORT > 0 && HTTP_PORT < 65536 )) || { warn "Puerto inválido."; continue; }
-    if command -v ss >/dev/null 2>&1 && ss -ltnH "sport = :$HTTP_PORT" 2>/dev/null | grep -q . \
-       && ! docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | grep -q "^${PROJECT}-nginx.*:$HTTP_PORT->"; then
-      warn "El puerto $HTTP_PORT ya está en uso por otro programa."
+    if port_busy "$HTTP_PORT" "$PROJECT"; then
+      warn "El puerto $HTTP_PORT ya está en uso (otra instalación u otro programa)."
       yes_no "¿Usarlo igual?" n || continue
     fi
     break
@@ -352,6 +381,11 @@ fi
 
 # ---------- levantar ---------------------------------------------------------------------
 PORT=$(env_get HTTP_PORT); PORT=${PORT:-80}
+PROJ=$(env_get COMPOSE_PROJECT_NAME); PROJ=${PROJ:-vectus-sat}
+OTHER=$(project_dir "$PROJ")
+if [[ -n "$OTHER" && "$OTHER" != "$PWD" ]]; then
+  die "La instalación de $OTHER ya usa el nombre '$PROJ'. Ejecutá ./install.sh › Reconfigurar y elegí otro nombre."
+fi
 title "Levantando los contenedores"
 info "La primera vez descarga imágenes y compila la consola: puede tardar unos minutos."
 mkdir -p data backups
