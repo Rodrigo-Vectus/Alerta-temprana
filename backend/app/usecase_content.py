@@ -193,13 +193,25 @@ def playbook(kev, enr, fg=None):
 
 
 # ============================================================================ RUNBOOK (técnico)
+SLA_HOURS = {
+    "Crítica": {"triage": 1, "contencion": 4, "parche_expuestos": 72, "parche_resto": 168},
+    "Alta": {"triage": 4, "contencion": 24, "parche_expuestos": 168, "parche_resto": 720},
+}
+
+
+def fmt_hours(h):
+    return f"{h} hora" + ("s" if h != 1 else "") if h < 72 or h % 24 else f"{h // 24} días"
+
+
+def severity(x, score):
+    return "Crítica" if (x["cvss"] or 0) >= 9 or score >= 80 or x["ransom"] else "Alta"
+
+
 def _sla(x, score):
-    critical = (x["cvss"] or 0) >= 9 or score >= 80 or x["ransom"]
-    if critical:
-        return "Crítica", [("Triage y confirmación de exposición", "1 hora"), ("Contención en activos expuestos", "4 horas"),
-                           ("Parche en activos expuestos", "72 horas"), ("Parche en el resto", "7 días")]
-    return "Alta", [("Triage y confirmación de exposición", "4 horas"), ("Contención en activos expuestos", "24 horas"),
-                    ("Parche en activos expuestos", "7 días"), ("Parche en el resto", "30 días")]
+    sev = severity(x, score)
+    h = SLA_HOURS[sev]
+    return sev, [("Triage y confirmación de exposición", fmt_hours(h["triage"])), ("Contención en activos expuestos", fmt_hours(h["contencion"])),
+                 ("Parche en activos expuestos", fmt_hours(h["parche_expuestos"])), ("Parche en el resto", fmt_hours(h["parche_resto"]))]
 
 
 VERSION_CMDS = {
@@ -465,3 +477,8 @@ def runbook_markdown(code, title, sections):
             elif b["type"] == "links":
                 out += [f"- [{r['label']}]({r['url']})" for r in b["items"]] + [""]
     return "\n".join(out)
+
+
+def runbook_titles(kev, enr, fg):
+    x = _ctx(kev, enr, fg)
+    return {"hunting": [g["title"] for g in _hunting(x)], "contencion": [g["title"] for g in _containment(x)]}

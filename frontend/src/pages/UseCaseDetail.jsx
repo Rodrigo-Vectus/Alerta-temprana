@@ -15,41 +15,55 @@ const EVENTS = {
   seguimiento_cliente: 'Seguimiento actualizado', playbook_actualizado: 'Playbook actualizado', clientes_agregados: 'Clientes agregados', caso_cerrado: 'Caso cerrado', caso_reabierto: 'Caso reabierto',
 }
 
-function Flow({ uc }) {
+const STATE_LABEL = { done: 'Completado', current: 'En curso', pending: 'Pendiente', rejected: 'Cancelado' }
+const STATE_CLS = { done: 'b-ok', current: 'b-warn', pending: 'b-muted', rejected: 'b-danger' }
+
+function ProcessFlow({ uc, go }) {
+  const { steps, severity } = uc.flow
+  let n = 0
   return (
-    <div className="flow">
-      <div className="flow-head">
-        <div className="t">{uc.code} | {uc.vendor} {uc.product}</div>
-        <div className="s">{uc.cve_id} · {uc.alert_name} · CISA KEV</div>
+    <div className="proc">
+      <div className="flow-head" style={{ marginBottom: 14 }}>
+        <div className="t">{uc.code} | Procedimiento SOC</div>
+        <div className="s">{uc.cve_id} · Severidad operativa {severity} · plazos medidos desde la detección</div>
       </div>
-      {uc.flow.map((s, i) => (
-        <Fragment key={s.id}>
-          <div className="flow-arrow">↓</div>
-          {s.type === 'decision' ? (
-            <div className="flow-dec">
+      {steps.map((s) => {
+        if (s.kind === 'decision') {
+          return (
+            <div key={s.id} className="flow-dec" style={{ margin: '6px 0 14px' }}>
               <div className="q">{s.title}</div>
-              {s.no_label && (
-                <div className="flow-branches">
-                  <div className={`flow-branch no ${s.answer === 'no' ? 'taken' : ''}`}><div className="lbl">↓ NO</div><div className="n">{s.no_label}</div></div>
-                  <div className={`flow-branch si ${s.answer === 'si' ? 'taken' : ''}`}><div className="lbl">↓ SÍ</div><div className="n">{s.si_label}</div></div>
-                </div>
-              )}
-              {!s.no_label && <div className="mono" style={{ fontSize: 11, color: 'var(--ok)', marginTop: 4 }}>SÍ</div>}
+              <div className="flow-branches">
+                <div className={`flow-branch no ${s.answer === 'no' ? 'taken' : ''}`}><div className="lbl">NO</div><div className="n">{s.no_label}</div></div>
+                <div className={`flow-branch si ${s.answer === 'si' ? 'taken' : ''}`} style={s.answer === 'si' ? { borderColor: 'var(--danger)' } : {}}><div className="lbl" style={{ color: 'var(--danger)' }}>SÍ</div><div className="n">{s.si_label}</div></div>
+              </div>
+              {s.detail && <div className="mono" style={{ fontSize: 11, color: 'var(--danger)', marginTop: 6 }}>{s.detail}</div>}
             </div>
-          ) : (
-            <div className={`flow-step ${s.state} ${i === uc.flow.length - 1 ? 'final' : ''}`}>
-              <span className="st" />
-              <div className="t">{s.title}</div>
-              <div className="d">{s.desc}</div>
-              {(s.detail || s.at) && <div className="x">{s.detail}{s.at ? ` · ${fmtDateTime(s.at)}` : ''}</div>}
+          )
+        }
+        n += 1
+        return (
+          <div key={s.id} className={`proc-step ${s.state}`}>
+            <div className="proc-num">{s.state === 'done' ? '✓' : n}</div>
+            <div className="proc-body">
+              <div className="proc-head">
+                <span className="t">{s.title}</span>
+                <span className={`badge ${STATE_CLS[s.state]}`}>{STATE_LABEL[s.state]}</span>
+                <span className="spacer" />
+                <span className="badge b-info" title="Responsable">{s.owner}</span>
+                {s.sla && <span className={`badge ${s.due?.overdue ? 'b-danger' : 'b-muted'}`} title={s.due ? `Vence ${fmtDateTime(s.due.at)}` : ''}>
+                  {s.due?.overdue ? 'Vencido · ' : 'Plazo '}{s.sla}</span>}
+              </div>
+              <ul className="proc-actions">{s.actions.map((a, i) => <li key={i} className={a.startsWith('•') ? 'sub' : ''}>{a.replace(/^•\s*/, '')}</li>)}</ul>
+              <div className="row wrap" style={{ gap: 8 }}>
+                {s.links.map((l) => (l.to
+                  ? <Link key={l.label} to={l.to} className="btn btn-sm btn-secondary" style={{ textDecoration: 'none' }}>{l.label} →</Link>
+                  : <button key={l.label} className="btn btn-sm btn-secondary" onClick={() => go(l.tab, l.anchor)}>{l.label} →</button>))}
+                {s.detail && <span className="mono dim" style={{ fontSize: 11, marginLeft: 'auto' }}>{s.detail}</span>}
+              </div>
             </div>
-          )}
-        </Fragment>
-      ))}
-      <div className="row wrap" style={{ justifyContent: 'center', gap: 14, marginTop: 18 }}>
-        <span className="hint">✓ completado</span><span className="hint" style={{ color: 'var(--warn)' }}>● en curso</span>
-        <span className="hint">◌ pendiente</span><span className="hint" style={{ color: 'var(--danger)' }}>✕ cancelado</span>
-      </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -104,7 +118,7 @@ function CodeBlock({ b }) {
 
 function Runbook({ sections }) {
   return sections.map((sec) => (
-    <div className="rb-sec" key={sec.id}>
+    <div className="rb-sec" key={sec.id} id={`rb-${sec.id}`} style={{ scrollMarginTop: 90 }}>
       <h4>{sec.title}</h4>
       {sec.blocks.map((b, i) => {
         if (b.type === 'text') return <p key={i} className="prose" style={{ fontSize: 13, marginBottom: 10 }}>{b.text}</p>
@@ -128,7 +142,7 @@ export default function UseCaseDetail() {
   const { canWrite } = useAuth()
   const toast = useToast()
   const { data: uc, error, loading, setData } = useFetch(() => api.get(`/usecases/${code}`), [code], { interval: 60000 })
-  const [tab, setTab] = useState('ataque')
+  const [tab, setTab] = useState('proceso')
   const [closing, setClosing] = useState(null)
   const [notes, setNotes] = useState({})
   usePageHeader(uc ? `${uc.code} · ${uc.cve_id}` : code, uc ? `${uc.vendor} ${uc.product}` : 'Caso de uso SOC')
@@ -136,6 +150,12 @@ export default function UseCaseDetail() {
   if (loading && !uc) return <Loading />
   if (error) return <><Link to="/casos-de-uso" className="back"><IconArrowLeft width={14} />Volver</Link><ErrorBox error={error} /></>
 
+  // Ir a una pestaña y, si corresponde, a una sección del runbook
+  const go = (t, anchor) => {
+    setTab(t)
+    if (anchor) setTimeout(() => document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120)
+    else window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
   const call = async (fn, msg) => { try { setData(await fn()); if (msg) toast(msg) } catch (e) { toast(e.message, 'err') } }
   const locked = !canWrite || uc.status === 'cerrado'
   const pct = uc.progress.total ? Math.round((uc.progress.done / uc.progress.total) * 100) : 0
@@ -167,14 +187,14 @@ export default function UseCaseDetail() {
 
       <div className="toolbar">
         <div className="chips">
-          {[['ataque', 'Flujo del ataque'], ['playbook', `Playbook (${uc.progress.done}/${uc.progress.total})`], ['runbook', 'Runbook SOC'], ['clientes', `Seguimiento por cliente (${uc.clients.total})`], ['proceso', 'Proceso SOC'], ['historial', 'Historial']].map(([k, l]) => (
+          {[['proceso', 'Proceso SOC'], ['ataque', 'Flujo del ataque'], ['playbook', `Playbook (${uc.progress.done}/${uc.progress.total})`], ['runbook', 'Runbook SOC'], ['clientes', `Seguimiento por cliente (${uc.clients.total})`], ['historial', 'Historial']].map(([k, l]) => (
             <button key={k} className={`chip ${tab === k ? 'on' : ''}`} onClick={() => setTab(k)}>{l}</button>
           ))}
         </div>
       </div>
 
       {tab === 'ataque' && <div className="card"><AttackFlow attack={uc.attack} uc={uc} /></div>}
-      {tab === 'proceso' && <div className="card"><p className="hint" style={{ marginBottom: 14, textAlign: 'center' }}>Cómo se gestionó esta alerta dentro de Vectus, desde la detección hasta el cierre.</p><Flow uc={uc} /></div>}
+      {tab === 'proceso' && <div className="card"><ProcessFlow uc={uc} go={go} /></div>}
       {tab === 'runbook' && (
         <div className="card">
           <div className="row" style={{ marginBottom: 16 }}>
