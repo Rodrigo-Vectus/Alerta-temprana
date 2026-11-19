@@ -90,6 +90,7 @@ def counts():
     with SessionLocal() as db:
         n = lambda *w: db.scalar(select(func.count()).select_from(Alert).where(*w))  # noqa: E731
         return {"nuevas": n(Alert.created_at >= datetime.now(timezone.utc) - timedelta(days=NEW_DAYS)),
+                "monitoreo": n(Alert.status == "monitoreo"),
                 "enviadas": n(Alert.status.in_(SENT)), "no_enviadas": n(Alert.status.in_(NOT_SENT)),
                 "todas": n(), "new_days": NEW_DAYS}
 

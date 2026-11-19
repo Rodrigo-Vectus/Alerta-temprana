@@ -10,6 +10,8 @@ import { Empty, ErrorBox, fmtDate, fmtPct, Loading, Score, StatusBadge, useFetch
 const FILTERS = [
   { key: 'nuevas', label: 'Nuevas', count: 'nuevas', order: 'recent', newDays: true,
     hint: (d) => `Ingresadas a la plataforma en los últimos ${d} días, de la más reciente a la más antigua.` },
+  { key: 'monitoreo', label: 'Monitoreo', count: 'monitoreo', status: 'monitoreo',
+    hint: () => 'Riesgo medio (puntaje 40 a 59): no se comunican a clientes, quedan a la vista. Si cambian los datos o cargás un cliente con esa tecnología, el puntaje se recalcula y pueden pasar a notificarse.' },
   { key: 'enviadas', label: 'Enviadas', count: 'enviadas', status: 'enviada,cerrada', order: 'recent',
     hint: () => 'Alertas cuyo comunicado ya se envió a los clientes.' },
   { key: 'no_enviadas', label: 'No enviadas', count: 'no_enviadas', status: 'no_enviada,descartada', order: 'recent',
@@ -17,6 +19,14 @@ const FILTERS = [
   { key: 'todas', label: 'Todas', count: 'todas',
     hint: () => 'Todas las vulnerabilidades evaluadas, ordenadas por puntaje.' },
 ]
+
+// Filtros por estado que no tienen pestaña propia (se llega desde las tarjetas del Panel)
+const EXTRA = {
+  candidata: { key: 'candidata', label: 'Candidatas', status: 'candidata',
+    hint: () => 'Puntaje 60 o más, todavía sin comunicado: esperan validación del analista.' },
+  en_revision: { key: 'en_revision', label: 'En revisión', status: 'en_revision,aprobada',
+    hint: () => 'Tienen comunicado en preparación o programado, todavía no enviado.' },
+}
 
 function Detected({ a }) {
   const d = new Date(a.created_at)
@@ -34,7 +44,8 @@ export default function Alerts() {
   const toast = useToast()
   const { canWrite } = useAuth()
   const [params, setParams] = useSearchParams()
-  const filter = FILTERS.find((f) => f.key === params.get('f')) || FILTERS[0]
+  const filter = FILTERS.find((f) => f.key === params.get('f')) || EXTRA[params.get('f')] || FILTERS[0]
+  const extra = !!EXTRA[params.get('f')]
   const [q, setQ] = useState(params.get('q') || '')
   const [qDebounced, setQDebounced] = useState(q)
   const [busy, setBusy] = useState(false)
@@ -71,6 +82,11 @@ export default function Alerts() {
               {f.label}{counts.data && <span className="chip-n">{counts.data[f.count]}</span>}
             </button>
           ))}
+          {extra && (
+            <button className="chip on" onClick={() => setParams({ f: 'nuevas' })} title="Quitar filtro">
+              {filter.label} <span style={{ marginLeft: 6, opacity: 0.8 }}>✕</span>
+            </button>
+          )}
         </div>
         <span className="spacer" />
         <div className="search"><IconSearch /><input placeholder="Buscar CVE, código, fabricante…" value={q} onChange={(e) => setQ(e.target.value)} /></div>
