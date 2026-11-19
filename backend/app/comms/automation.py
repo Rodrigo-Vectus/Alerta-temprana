@@ -95,14 +95,16 @@ def _set_alert(alert, new, comment):
 
 # ----------------------------------------------------------------- 1. programar
 def schedule_for_results(results: list[dict]):
-    """Recibe la salida de scoring.process_pending y programa los comunicados que correspondan."""
+    """Recibe la salida de scoring.process_pending y arma el comunicado de cada alerta nueva significativa.
+    - Envío automático activado: queda «programado» y sale solo al vencer la ventana del SOC.
+    - Desactivado: queda como «borrador»; el SOC recibe igual el aviso y decide si lo envía.
+    En ambos casos se crea el caso de uso y el SOC recibe el comunicado y el playbook."""
     if not results:
         return []
     created = []
     with SessionLocal() as db:
         cfg = get_settings(db)
-        if not cfg["auto_send"]:
-            return []
+        auto = bool(cfg["auto_send"])
         for r in results:
             if r.get("trigger") != "nueva_en_kev" or r.get("status") != "candidata" or r.get("score", 0) < cfg["min_score"]:
                 continue
@@ -110,17 +112,23 @@ def schedule_for_results(results: list[dict]):
             if not alert or db.scalar(select(Communication).where(Communication.alert_id == alert.id)):
                 continue
             kev, enr = db.get(KevVulnerability, alert.cve_id), db.get(CveEnrichment, alert.cve_id)
-            when = now_utc() + timedelta(minutes=int(cfg["delay_minutes"]))
-            comm = Communication(alert_id=alert.id, content=build_content(kev, enr, alert, fortiguard_lookup(alert.cve_id)), status="programado",
-                                 scheduled_at=when, auto=True, created_by="sistema", updated_by="sistema")
+            when = now_utc() + timedelta(minutes=int(cfg["delay_minutes"])) if auto else None
+            comm = Communication(alert_id=alert.id, content=build_content(kev, enr, alert, fortiguard_lookup(alert.cve_id)),
+                                 status="programado" if auto else "borrador", scheduled_at=when, auto=auto,
+                                 created_by="sistema", updated_by="sistema")
             db.add(comm)
             db.flush()
             comm.code = f"COM-{date.today().year}-{comm.id:04d}"
-            _history(alert, "comunicado_programado", comentario=f"{comm.code} · envío automático {local_hhmm(when)}")
-            _set_alert(alert, "en_revision", f"Envío automático programado ({comm.code})")
+            if auto:
+                _history(alert, "comunicado_programado", comentario=f"{comm.code} · envío automático {local_hhmm(when)}")
+                _set_alert(alert, "en_revision", f"Envío automático programado ({comm.code})")
+            else:
+                _history(alert, "comunicado_generado", comentario=f"{comm.code} · borrador (envío automático desactivado)")
+                _set_alert(alert, "en_revision", f"Borrador {comm.code} generado: el SOC decide el envío")
             ensure_use_case(db, alert, "sistema", (comm.content or {}).get("fortiguard"))
             db.commit()
-            log.warning("COMUNICADO PROGRAMADO %s para %s (%s)", comm.code, local_hhmm(when), alert.code)
+            log.warning("COMUNICADO %s %s (%s)", comm.code,
+                        f"PROGRAMADO para {local_hhmm(when)}" if auto else "EN BORRADOR (envío automático desactivado)", alert.code)
             created.append(comm.code)
             notify_soc(db, comm, cfg)
     return created
@@ -132,17 +140,21 @@ def notify_soc(db, comm, cfg):
     if not soc or not mailer.is_configured():
         return
     rcpts = recipients(db)
-    when = local_hhmm(comm.scheduled_at) if comm.scheduled_at else "—"
-    notice = {
-        "text": (f"Este comunicado se enviará automáticamente a las {when} a {len(rcpts)} contacto(s) "
-                 f"de {len({r['client'] for r in rcpts})} cliente(s). Si hay que corregirlo o frenarlo, hacelo desde la consola antes de esa hora."),
-        "url": f"{cfg['public_url']}/comunicados/{comm.code}",
-    }
+    if comm.status == "programado" and comm.scheduled_at:
+        when = local_hhmm(comm.scheduled_at)
+        text = (f"Este comunicado se enviará automáticamente a las {when} a {len(rcpts)} contacto(s) "
+                f"de {len({r['client'] for r in rcpts})} cliente(s). Si hay que corregirlo o frenarlo, hacelo desde la consola antes de esa hora.")
+        prefix = f"[SAT · sale {when}] "
+    else:
+        text = ("El envío automático está desactivado: este comunicado NO se envía solo. "
+                f"Si corresponde avisar a los clientes ({len(rcpts)} contacto(s)), revisalo y tocá «Enviar a clientes» en la consola.")
+        prefix = "[SAT · borrador, no se envía solo] "
+    notice = {"text": text, "url": f"{cfg['public_url']}/comunicados/{comm.code}"}
     atts, _ = build_attachments(comm, cfg.get("attach_docx", False))
     entry = {"fecha": now_utc().isoformat(timespec="seconds"), "tipo": "aviso_soc", "to": soc,
              "usuario": "sistema", "adjuntos": [a[0] for a in atts]}
     try:
-        mailer.send(comm.content, soc, atts, subject_prefix=f"[SAT · sale {when}] ", notice=notice)
+        mailer.send(comm.content, soc, atts, subject_prefix=prefix, notice=notice)
         entry["ok"] = True
     except Exception as exc:
         entry.update(ok=False, error=str(exc)[:500])

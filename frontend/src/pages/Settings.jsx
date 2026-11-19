@@ -38,9 +38,9 @@ export default function Settings() {
         <div className="card-title">Cómo funciona</div>
         <ol className="prose" style={{ paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
           <li>Cada 15 minutos se consulta el catálogo KEV de CISA.</li>
-          <li>Si aparece una vulnerabilidad <b>nueva</b> con puntaje igual o mayor al umbral, se genera el comunicado (newsletter + informe PDF).</li>
-          <li>El SOC recibe en ese momento el mismo mail, con un aviso y el link para editarlo o cancelarlo.</li>
-          <li>Pasada la ventana, se envía solo a <b>todos los contactos activos</b> cargados en <Link to="/clientes">Clientes</Link>{rc.data && <> (hoy: {rc.data.contacts} contacto(s) de {rc.data.clients} cliente(s))</>}.</li>
+          <li>Si aparece una vulnerabilidad <b>nueva</b> con puntaje igual o mayor al umbral, se genera el comunicado (newsletter + informe PDF) y el caso de uso SOC.</li>
+          <li>El SOC recibe en ese momento dos mails: el comunicado tal como lo verán los clientes (con el link para editarlo o cancelarlo) y el playbook técnico del caso.</li>
+          <li>Pasada la ventana, se envía solo a <b>todos los contactos activos</b> cargados en <Link to="/clientes">Clientes</Link>{rc.data && <> (hoy: {rc.data.contacts} contacto(s) de {rc.data.clients} cliente(s))</>}. Si el envío automático está desactivado, queda como borrador hasta que el SOC lo envíe.</li>
         </ol>
       </div>
 
@@ -52,7 +52,7 @@ export default function Settings() {
               <input type="checkbox" checked={form.auto_send} disabled={!isAdmin} onChange={(e) => set('auto_send')(e.target.checked)} />
               <b>Enviar automáticamente</b> las alertas nuevas a todos los contactos de clientes
             </label>
-            {!form.auto_send && <p className="hint" style={{ marginTop: 6 }}>Desactivado: los comunicados se generan solo a mano desde cada alerta y se envían con “Enviar a clientes”.</p>}
+            {!form.auto_send && <p className="hint" style={{ marginTop: 6 }}>Desactivado: cada alerta nueva igual genera su comunicado (como borrador) y su caso de uso, y el SOC recibe los dos mails. A los clientes no sale nada hasta que alguien toque “Enviar a clientes”.</p>}
           </div>
           <div className="fg">
             <label>Ventana de revisión del SOC</label>
