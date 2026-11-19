@@ -374,10 +374,15 @@ export default function CommunicationEditor() {
           .sort((a, b) => a[0].localeCompare(b[0]))
         return (
           <Modal title="Enviar a clientes"
-            desc={`El newsletter y el informe PDF se envían ahora a ${byClient.length} cliente(s). Cada persona de contacto recibe su propio mail.`}
+            desc={pending.length === 0
+              ? (rcpt.data?.length ? 'Todos los contactos ya recibieron este comunicado.' : 'Todavía no hay destinatarios: no hay clientes activos con contactos cargados.')
+              : `El newsletter y el informe PDF se envían ahora a ${byClient.length} cliente(s). Cada persona de contacto recibe su propio mail.`}
             onClose={() => setConfirmSend(false)}
             actions={<><button className="btn btn-secondary" onClick={() => setConfirmSend(false)}>Cancelar</button>
               <button className="btn btn-success" onClick={sendNow} disabled={!!busy || pending.length === 0}>{busy === 'now' ? 'Programando…' : 'Enviar'}</button></>}>
+            {pending.length === 0 && !rcpt.data?.length && (
+              <div className="alert-box info">Cargá al menos un cliente con su persona de contacto en <Link to="/clientes"><b>Gestión › Clientes</b></Link> y volvé a tocar <b>Enviar a clientes</b>.</div>
+            )}
             <div className="chips" style={{ maxHeight: 220, overflowY: 'auto' }}>
               {byClient.map(([client, n]) => (
                 <span key={client} className="chip" style={{ cursor: 'default' }}>{client}<span className="badge b-info" style={{ marginLeft: 4 }}>{n} contacto{n > 1 ? 's' : ''}</span></span>
