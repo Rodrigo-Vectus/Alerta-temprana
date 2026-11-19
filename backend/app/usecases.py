@@ -54,6 +54,20 @@ def ensure_use_case(db, alert, user_email="sistema", fg=None):
     return uc, True
 
 
+def ensure_for_communications(db) -> list[str]:
+    """Garantiza que todo comunicado (generado, programado o enviado) tenga su caso de uso SOC.
+    Se ejecuta al arrancar el worker y antes de cada envío."""
+    created = []
+    rows = db.scalars(select(Alert).join(Communication, Communication.alert_id == Alert.id)
+                      .where(~select(UseCase.id).where(UseCase.alert_id == Alert.id).exists())).all()
+    for alert in rows:
+        uc, new = ensure_use_case(db, alert, "sistema")
+        if new:
+            created.append(uc.code)
+    db.commit()
+    return created
+
+
 # ======================================================================= PROCESO SOC
 def _section_state(uc, sec_id):
     sec = next((x for x in (uc.playbook or []) if x["id"] == sec_id), None)

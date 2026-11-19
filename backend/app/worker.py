@@ -6,6 +6,7 @@ from app.collectors.kev import run_once
 from app.comms.automation import dispatch_due, schedule_for_results
 from app.db import SessionLocal, init_db
 from app.scoring import process_pending, refresh_incomplete, seed_watchlist
+from app.usecases import ensure_for_communications
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [worker] %(levelname)s %(message)s")
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -29,6 +30,9 @@ def main():
     init_db()
     with SessionLocal() as db:
         seed_watchlist(db)
+        faltantes = ensure_for_communications(db)
+        if faltantes:
+            logging.info("Casos de uso creados para comunicados que no tenían: %s", faltantes)
     logging.info("Worker iniciado - KEV cada %s min, envíos programados cada %s s", INTERVAL // 60, TICK)
     next_kev = 0.0
     while True:

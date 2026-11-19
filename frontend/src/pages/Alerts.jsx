@@ -23,7 +23,7 @@ function Detected({ a }) {
   return (
     <>
       <div className="num">{d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>
-      <div className="sub mono">{a.origin === 'carga_inicial' ? 'carga inicial' : d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }) + ' hs'}</div>
+      <div className="sub mono">{d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })} hs{a.origin === 'carga_inicial' && ' · carga inicial'}</div>
     </>
   )
 }

@@ -16,7 +16,7 @@ from app.comms.newsletter import render_newsletter
 from app.comms.pdf import PdfError, docx_to_pdf
 from app.db import SessionLocal
 from app.usecases import ensure_use_case
-from app.models import Alert, Communication, CveEnrichment, KevVulnerability, User
+from app.models import Alert, Communication, CveEnrichment, KevVulnerability, UseCase, User
 
 router = APIRouter(prefix="/api/communications", tags=["comunicados"])
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -65,8 +65,8 @@ def _filename(comm: Communication, ext: str):
     return f"Vectus - Alerta {cve} - {comm.code}.{ext}"
 
 
-def _summary(comm: Communication, alert: Alert, kev: KevVulnerability):
-    return {"code": comm.code, "status": comm.status, "alert_code": alert.code, "alert_status": alert.status,
+def _summary(comm: Communication, alert: Alert, kev: KevVulnerability, use_case: str | None = None):
+    return {"use_case": use_case, "code": comm.code, "status": comm.status, "alert_code": alert.code, "alert_status": alert.status,
             "score": alert.score, "cve_id": alert.cve_id, "vendor": kev.vendor_project, "product": kev.product,
             "title": comm.content.get("title"), "subject": comm.content.get("subject"),
             "sends": len(comm.sends or []), "last_send": (comm.sends or [None])[-1],
@@ -99,7 +99,8 @@ def list_communications():
                           .join(Alert, Alert.id == Communication.alert_id)
                           .join(KevVulnerability, KevVulnerability.cve_id == Alert.cve_id)
                           .order_by(Communication.updated_at.desc())).all()
-        return [_summary(*r) for r in rows]
+        ucs = dict(db.execute(select(UseCase.alert_id, UseCase.code)).all())
+        return [_summary(c, a, k, ucs.get(a.id)) for c, a, k in rows]
 
 
 @router.get("/mail-status")
@@ -194,6 +195,7 @@ def send_now(code: str, user: User = Depends(get_current_user)):
         prev = comm.status
         comm.status, comm.scheduled_at, comm.updated_by = "programado", _now(), user.email
         _alert_history(alert, "envio_manual", user, comentario=f"{comm.code}: envío a clientes solicitado (estado previo: {prev})")
+        ensure_use_case(db, alert, user.email, (comm.content or {}).get("fortiguard"))
         db.commit()
         return _full(comm, alert, kev)
 

@@ -39,7 +39,7 @@ export default function Communications() {
         ) : data && (
           <div className="table-wrap">
             <table className="tbl">
-              <thead><tr><th>Comunicado</th><th>Score</th><th>Alerta</th><th>Título</th><th>Estado</th><th>Envío</th><th>Actualizado</th></tr></thead>
+              <thead><tr><th>Comunicado</th><th>Score</th><th>Alerta</th><th>Título</th><th>Estado</th><th>Caso de uso</th><th>Envío</th><th>Actualizado</th></tr></thead>
               <tbody>{data.map((c) => (
                 <tr key={c.code} className="click" onClick={() => navigate(`/comunicados/${c.code}`)}>
                   <td className="code">{c.code}</td>
@@ -47,6 +47,9 @@ export default function Communications() {
                   <td><div className="code" style={{ color: 'var(--text)' }}>{c.alert_code}</div><div className="sub mono">{c.cve_id}</div></td>
                   <td style={{ maxWidth: 420 }}><div className="prod">{c.title}</div><div className="sub">{c.vendor} {c.product}</div></td>
                   <td><CommBadge status={c.status} />{c.auto && <div className="sub mono">automático</div>}</td>
+                  <td>{c.use_case
+                    ? <a className="code" href={`/casos-de-uso/${c.use_case}`} onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate(`/casos-de-uso/${c.use_case}`) }}>{c.use_case}</a>
+                    : <span className="dim">—</span>}</td>
                   <td className="num">{c.status === 'programado' ? <span style={{ color: 'var(--warn)' }}>{new Date(c.scheduled_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })} hs</span> : c.status === 'enviado' && c.last_send ? timeAgo(c.last_send.fecha) : '—'}</td>
                   <td className="num">{fmtDateTime(c.updated_at)}</td>
                 </tr>

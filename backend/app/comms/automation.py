@@ -183,6 +183,11 @@ def _dispatch(db, comm):
         db.commit()
         return {"code": comm.code, "status": "error"}
 
+    if alert:
+        uc, created = ensure_use_case(db, alert, "sistema", (comm.content or {}).get("fortiguard"))
+        if created:
+            db.commit()
+            log.info("%s: caso de uso %s creado al enviar", comm.code, uc.code)
     atts, warning = build_attachments(comm, cfg.get("attach_docx", False))
     if warning:
         log.warning("%s: %s", comm.code, warning)

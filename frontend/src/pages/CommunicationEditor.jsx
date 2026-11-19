@@ -71,6 +71,7 @@ export default function CommunicationEditor() {
   const toast = useToast()
   const { data, error, loading, setData } = useFetch(() => api.get(`/communications/${code}`), [code])
   const mail = useFetch(() => api.get('/communications/mail-status'), [])
+  const uc = useFetch(() => (data?.alert_code ? api.get(`/usecases/by-alert/${data.alert_code}`) : Promise.resolve(null)), [data?.alert_code, data?.status])
   const rcpt = useFetch(() => api.get(`/communications/${code}/recipients`), [code, data?.status])
   const [confirmSend, setConfirmSend] = useState(false)
   const [, tick] = useState(0)
@@ -165,6 +166,7 @@ export default function CommunicationEditor() {
           <div className="hero-meta">
             <CommBadge status={data.status} />
             <Link to={`/alertas/${data.alert_code}`} className="badge b-info" style={{ textDecoration: 'none' }}>{data.alert_code}</Link>
+            {uc.data?.code && <Link to={`/casos-de-uso/${uc.data.code}`} className="badge b-cyan" style={{ textDecoration: 'none' }} title="Caso de uso del SOC">Caso de uso {uc.data.code} →</Link>}
             <StatusBadge status={data.alert_status} />
             {data.clients.length > 0 && <span className="badge b-danger">Clientes afectados: {data.clients.join(', ')}</span>}
             {dirty && <span className="badge b-warn">Cambios sin guardar</span>}

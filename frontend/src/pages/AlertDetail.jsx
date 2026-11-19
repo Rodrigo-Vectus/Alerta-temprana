@@ -152,6 +152,7 @@ export default function AlertDetail() {
               {a.cvss_vector && <><dt>Vector</dt><dd className="mono" style={{ fontSize: 11 }}>{a.cvss_vector}</dd></>}
               <dt>EPSS</dt><dd>{fmtPct(a.epss, 2)} {a.epss_percentile != null && <span className="dim">· percentil {fmtPct(a.epss_percentile, 0)}</span>}</dd>
               <dt>CWE</dt><dd>{a.cwes?.length ? a.cwes.join(', ') : '—'}</dd>
+              <dt>Detectada en la plataforma</dt><dd>{fmtDateTime(a.created_at)} hs{a.history?.[0]?.evento === 'carga_inicial' && ' (carga inicial)'}</dd>
               <dt>Agregada a KEV</dt><dd>{fmtDate(a.date_added)}</dd>
               <dt>Plazo CISA</dt><dd>{fmtDate(a.due_date)}</dd>
               <dt>Publicada NVD</dt><dd>{fmtDate(a.nvd_published)}</dd>

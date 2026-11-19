@@ -64,7 +64,7 @@ export default function Dashboard() {
                     <tr key={a.code} className="click" onClick={() => navigate(`/alertas/${a.code}`)}>
                       <td><Score value={a.score} /></td>
                       <td><div className="code">{a.code}</div><div className="sub mono">{a.cve_id}</div></td>
-                      <td><div className="prod">{a.vendor} {a.product}</div><div className="sub">KEV {fmtDate(a.date_added)}</div></td>
+                      <td><div className="prod">{a.vendor} {a.product}</div><div className="sub">KEV {fmtDate(a.date_added)} · detectada {fmtDateTime(a.created_at)} hs</div></td>
                       <td>{a.clients.length ? <span className="badge b-danger">{a.clients.length}</span> : <span className="dim">—</span>}</td>
                       <td><StatusBadge status={a.status} /></td>
                     </tr>
